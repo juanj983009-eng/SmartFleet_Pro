@@ -1,0 +1,20 @@
+# Excluir entornos virtuales locales pesados
+.venv/
+venv/
+env/
+
+# Excluir cachés de Python
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Excluir datos persistentes de las BD locales
+Data/
+data/
+
+# Excluir configuraciones del editor e historial
+.vscode/
+.git/
+.gitignore
+README.md

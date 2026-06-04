@@ -1,0 +1,115 @@
+version: '3.8'
+
+services:
+  # Motor de procesamiento PySpark (Capa de Aplicación y Cómputo)
+  spark_engine:
+    build: .
+    container_name: spark_engine_container
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    depends_on:
+      - cassandra_fleet
+      - mongo_fleet
+      - postgres_fleet
+    networks:
+      - fleet_network
+
+  # Capa de Exposición (API FastAPI)
+  app_api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: fastapi_fleet_api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - MONGO_HOST=mongo_fleet:27017
+      - CASSANDRA_HOST=cassandra_fleet:9042
+      - POSTGRES_URL=jdbc:postgresql://postgres_fleet:5432/smart_fleet_db
+    volumes:
+      - .:/app
+    depends_on:
+      mongo_fleet:
+        condition: service_healthy
+    networks:
+      - fleet_network
+
+  # Capa de Presentación (Frontend React + Tailwind CSS)
+  app_frontend:
+    build: .
+    container_name: streamlit_fleet_frontend
+    working_dir: /app/src/frontend
+    command: python -m http.server 8501 --bind 0.0.0.0
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    depends_on:
+      - app_api
+    networks:
+      - fleet_network
+
+  # Ingesta masiva y series temporales (NoSQL Columnar)
+  cassandra_fleet:
+    image: cassandra:4.1
+    container_name: cassandra_fleet
+    environment:
+      - TZ=America/Lima
+    ports:
+      - "9042:9042"
+    volumes:
+      - cassandra_data:/var/lib/cassandra
+    networks:
+      - fleet_network
+
+  # Data Warehouse analítico (NoSQL Documental)
+  mongo_fleet:
+    image: mongo:6.0
+    container_name: mongo_fleet
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_USER}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASS}
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - fleet_network
+
+  # Seguridad y auditoría (SQL Relacional)
+  postgres_fleet:
+    image: postgres:15-alpine
+    container_name: postgres_fleet
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - fleet_network
+
+# Declaración de volúmenes persistentes locales
+volumes:
+  cassandra_data:
+  mongo_data:
+  postgres_data:
+
+# Configuración de red común para comunicación aislada entre contenedores
+networks:
+  fleet_network:
+    driver: bridge

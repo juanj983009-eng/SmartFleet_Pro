@@ -1,0 +1,20 @@
+# Imagen base optimizada de Python para la API
+FROM python:3.11-slim-bullseye
+
+# Directorio de trabajo
+WORKDIR /app
+
+# Instalar dependencias del backend sin caché
+RUN pip install --no-cache-dir fastapi uvicorn pymongo python-dotenv
+
+# Copiar el código fuente al contenedor
+COPY src ./src
+
+# Directorio de trabajo en el backend (para soportar imports relativos)
+WORKDIR /app/src/backend
+
+# Exponer el puerto de FastAPI
+EXPOSE 8000
+
+# Comando por defecto para correr uvicorn con recarga en caliente
+CMD ["uvicorn", "app_api:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

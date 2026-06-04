@@ -1,0 +1,168 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Cuadrícula Técnica de Fondo (Technical Grid Overlay on radial base) */
+body {
+    background-color: #030712 !important;
+    background-image: 
+        linear-gradient(rgba(16, 185, 129, 0.05) 1px, transparent 1px), 
+        linear-gradient(90deg, rgba(16, 185, 129, 0.05) 1px, transparent 1px),
+        radial-gradient(circle at 50% 0%, #012217 0%, #030712 75%) !important;
+    background-size: 40px 40px, 40px 40px, 100% 100% !important;
+    background-attachment: fixed !important;
+    background-repeat: repeat, repeat, no-repeat !important;
+    height: 100vh !important;
+    overflow: hidden !important;
+}
+
+/* Animación de pulso para el indicador de API */
+@keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(1.15); }
+}
+.animate-pulse-fast {
+    animation: pulse 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* EFECTO DE INCLINACIÓN 3D (Perspective Hover) con Borde Pasivo Translúcido y Sombra Interna */
+.glow-card {
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    box-shadow: inset 0 0 15px rgba(255, 255, 255, 0.03) !important;
+    transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.5s ease, box-shadow 0.5s ease;
+    transform-style: preserve-3d;
+    transform: translate3d(0, 0, 0);
+    will-change: transform, box-shadow;
+}
+.glow-card:hover {
+    transform: rotateX(3deg) rotateY(-3deg) translateZ(8px) !important;
+    background-color: rgba(15, 23, 42, 0.5) !important;
+}
+
+/* RECONEXIÓN DE LUMINISCENCIA EN HOVER (Spread Neón) */
+/* Card 1 & Header: Verde Jade / Emerald */
+.glow-emerald:hover {
+    border-color: rgba(52, 211, 153, 0.4) !important;
+    box-shadow: inset 0 0 15px rgba(255, 255, 255, 0.03), 0 0 25px rgba(16, 185, 129, 0.20) !important;
+}
+
+/* Card 2: GPS samples - Verde Eléctrico */
+.glow-green:hover {
+    border-color: rgba(74, 222, 128, 0.4) !important;
+    box-shadow: inset 0 0 15px rgba(255, 255, 255, 0.03), 0 0 25px rgba(74, 222, 128, 0.20) !important;
+}
+
+/* Card 3: Speed - Teal */
+.glow-teal:hover {
+    border-color: rgba(45, 212, 191, 0.4) !important;
+    box-shadow: inset 0 0 15px rgba(255, 255, 255, 0.03), 0 0 25px rgba(45, 212, 191, 0.20) !important;
+}
+
+/* Card 4: Harsh Braking - Lime */
+.glow-lime:hover {
+    border-color: rgba(163, 230, 53, 0.4) !important;
+    box-shadow: inset 0 0 15px rgba(255, 255, 255, 0.03), 0 0 25px rgba(163, 230, 53, 0.20) !important;
+}
+
+/* Tabla 1: Detalle Físico - Malaquita */
+.glow-malaquita:hover {
+    border-color: rgba(34, 197, 94, 0.4) !important;
+    box-shadow: inset 0 0 15px rgba(255, 255, 255, 0.03), 0 0 25px rgba(34, 197, 94, 0.20) !important;
+}
+
+/* Tabla 2: Trazabilidad - Menta */
+.glow-menta:hover {
+    border-color: rgba(20, 184, 166, 0.4) !important;
+    box-shadow: inset 0 0 15px rgba(255, 255, 255, 0.03), 0 0 25px rgba(20, 184, 166, 0.20) !important;
+}
+
+/* Transición Elástica con Efecto de Rebote en el Anillo SVG */
+.ring-progress {
+    transition: stroke-dashoffset 1.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+    will-change: stroke-dashoffset;
+}
+
+/* Animación de desvanecimiento suave para la entrada de componentes */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in {
+    animation: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Animaciones para las líneas de datos flotantes */
+@keyframes floatData1 {
+    0%, 100% { transform: translateY(0px) scaleX(1); opacity: 0.06; }
+    50% { transform: translateY(-40px) scaleX(1.15); opacity: 0.10; }
+}
+@keyframes floatData2 {
+    0%, 100% { transform: translateY(0px) scaleY(1); opacity: 0.07; }
+    50% { transform: translateY(50px) scaleY(0.95); opacity: 0.12; }
+}
+@keyframes floatData3 {
+    0%, 100% { transform: translate(0px, 0px); opacity: 0.05; }
+    50% { transform: translate(30px, -30px); opacity: 0.10; }
+}
+@keyframes floatData4 {
+    0%, 100% { transform: translate(0px, 0px); opacity: 0.07; }
+    50% { transform: translate(-40px, 40px); opacity: 0.12; }
+}
+
+.animate-float-data-1 {
+    animation: floatData1 15s ease-in-out infinite;
+}
+.animate-float-data-2 {
+    animation: floatData2 20s ease-in-out infinite;
+}
+.animate-float-data-3 {
+    animation: floatData3 25s ease-in-out infinite;
+}
+.animate-float-data-4 {
+    animation: floatData4 18s ease-in-out infinite;
+}
+
+/* Optimización de Renderizado de Tipografía (Anti-Blur) & Estilización de Scrollbars */
+* {
+    text-rendering: optimizeLegibility !important;
+    -webkit-font-smoothing: antialiased !important;
+    -moz-osx-font-smoothing: grayscale !important;
+    scrollbar-width: thin;
+    scrollbar-color: #334155 transparent;
+}
+
+/* Soporte para navegadores Webkit (Chrome, Safari, Edge) */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: #1e293b;
+    border-radius: 9999px;
+    border: 1px solid transparent;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #334155;
+}
+
+/* Ajuste de filtros Backdrop-blur sutil para evitar desenfoque del texto */
+.backdrop-blur-md {
+    -webkit-backdrop-filter: blur(4px) !important;
+    backdrop-filter: blur(4px) !important;
+}
+
+/* Animación de barra de carga lineal infinita de alta fidelidad */
+@keyframes infinityLoad {
+    0% {
+        transform: translateX(-100%);
+    }
+    100% {
+        transform: translateX(100%);
+    }
+}
+.animate-infinity-load {
+    animation: infinityLoad 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}

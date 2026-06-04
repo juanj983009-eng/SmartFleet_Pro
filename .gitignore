@@ -1,0 +1,39 @@
+# =========================================================================
+# SMARTFLEET PRO - ENTERPRISE GITIGNORE
+# =========================================================================
+
+# Python - Entornos virtuales y caché de ejecución
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+env/
+venv/
+senv/
+
+# NodeJS - Dependencias de empaquetado del Frontend
+node_modules/
+src/frontend/node_modules/
+
+# Seguridad - Variables de entorno locales
+.env
+.env.local
+.env.*.local
+
+# Datos y Almacenamiento masivo (Datasets de telemetría)
+*.csv
+*.json
+*.log
+src/backend/telemetria.csv
+
+# Archivos del sistema y logs residuales de pruebas de red
+netstat
+.DS_Store
+Thumbs.db
+
+# Configuración local de IDEs (Opcional, conserva si deseas mantener tus layouts de VS Code)
+# .vscode/
+
+# Bloquear volúmenes físicos de datos de Docker
+Data/

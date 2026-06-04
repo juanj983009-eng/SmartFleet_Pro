@@ -1,0 +1,8 @@
+pyspark==3.5.0
+pymongo==4.6.1
+pandas
+numpy
+pyarrow
+streamlit>=1.35.0
+plotly>=5.22.0
+python-dotenv
