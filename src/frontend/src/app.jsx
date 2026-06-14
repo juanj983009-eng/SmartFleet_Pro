@@ -15,12 +15,38 @@ import {
   CartesianGrid,
   Tooltip
 } from 'recharts'
-import { MapContainer, TileLayer, Marker, Polyline } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Polyline, useMap } from 'react-leaflet'
 import 'leaflet/dist/leaflet.css'
+import L from 'leaflet'
 import VectoresFondo from './components/VectoresFondo'
+
+
+// Componente auxiliar para recentrar el mapa cuando cambian las coordenadas
+function MapRecenter({ lat, lng }) {
+  const map = useMap()
+  useEffect(() => {
+    if (typeof lat === 'number' && typeof lng === 'number' && !isNaN(lat) && !isNaN(lng)) {
+      map.setView([lat, lng], map.getZoom())
+    }
+  }, [lat, lng, map])
+  return null
+}
+
+// Icono personalizado con color verde neon (#39FF14) y pulso de radar
+const customIcon = new L.DivIcon({
+  html: `<div style="position: relative; display: flex; align-items: center; justify-content: center; width: 24px; height: 24px;">
+           <div class="animate-ping" style="position: absolute; width: 20px; height: 20px; background-color: rgba(57, 255, 20, 0.25); border-radius: 50%;"></div>
+           <div style="position: relative; width: 10px; height: 10px; background-color: #39FF14; border-radius: 50%; border: 1.5px solid #09090b; box-shadow: 0 0 8px #39FF14;"></div>
+         </div>`,
+  className: 'custom-gps-icon',
+  iconSize: [24, 24],
+  iconAnchor: [12, 12]
+})
+
 
 export default function App() {
   const [analyticsData, setAnalyticsData] = useState([])
+  const [routeHistory, setRouteHistory] = useState([])
   const [apiStatus, setApiStatus] = useState('OFFLINE')
 
   useEffect(() => {
@@ -43,6 +69,23 @@ export default function App() {
             console.log("[ANTIGRAVITY DEBUG] Dataset formateado para React:", formattedData)
             if (formattedData.length > 0) {
               setAnalyticsData(formattedData)
+              
+              // Inicializar el historial de ruta en orden cronológico (más antiguo al más nuevo)
+              const initialHistory = [...formattedData]
+                .reverse()
+                .map((doc) => {
+                  const p = doc?.posicion_actual
+                  if (p && p.latitud !== undefined && p.longitud !== undefined) {
+                    const latVal = parseFloat(p.latitud)
+                    const lngVal = parseFloat(p.longitud)
+                    if (!isNaN(latVal) && !isNaN(lngVal)) {
+                      return [latVal, lngVal]
+                    }
+                  }
+                  return null
+                })
+                .filter((coord) => coord !== null)
+              setRouteHistory(initialHistory)
             }
           }
         } else {
@@ -64,12 +107,27 @@ export default function App() {
       eventSource.addEventListener('pipeline_update', (event) => {
         try {
           const payload = JSON.parse(event.data)
-          setAnalyticsData((prev) => {
-            if (prev.length > 0 && payload.fecha_analisis <= prev[0].fecha_analisis) return prev
-            return [payload, ...prev].slice(0, 50)
-          })
+          console.log('[HUD ANALYTICS DEBUG]', payload?.ia_predictiva)
+
+          // 1. Actualizar el historial geoespacial de forma independiente y al nivel
+          //    superior del callback — nunca dentro de un updater funcional de otro estado.
+          const p = payload?.posicion_actual
+          if (p && p.latitud !== undefined && p.longitud !== undefined) {
+            const newLat = parseFloat(p.latitud)
+            const newLng = parseFloat(p.longitud)
+            if (!isNaN(newLat) && !isNaN(newLng)) {
+              setRouteHistory((prevHistory) => [...prevHistory, [newLat, newLng]])
+            }
+          }
+
+          // 2. Actualizar el estado analítico principal de forma independiente.
+          //    Sin guardia de deduplicación por fecha_analisis: la condicion bloqueaba
+          //    actualizaciones cuando el ETL emitia el mismo timestamp en ciclos consecutivos,
+          //    congelando todas las métricas mientras el mapa seguía recibiendo coordenadas.
+          setAnalyticsData((prev) => [payload, ...prev].slice(0, 50))
+
         } catch (err) {
-          console.error("Error parseando stream asíncrono:", err)
+          console.error("Error parseando stream asincrono:", err)
         }
       })
 
@@ -97,9 +155,47 @@ export default function App() {
   const currentSpeed = latestPoint?.velocidad ?? 0.0
   const currentAcceleration = latestPoint?.aceleracion ?? 0.0
 
-  const lat = displayDoc?.metricas_basicas?.posicion_actual?.latitud ?? -12.046374
-  const lng = displayDoc?.metricas_basicas?.posicion_actual?.longitud ?? -77.042793
-  const historialRuta = displayDoc?.metricas_basicas?.historial_coordenadas ?? []
+  const lat = displayDoc?.posicion_actual?.latitud ?? -12.046374
+  const lng = displayDoc?.posicion_actual?.longitud ?? -77.042793
+
+  // Animacion por interpolacion lineal (LERP) para suavizar el desplazamiento del marcador
+  const [animatedPosition, setAnimatedPosition] = useState([parseFloat(lat), parseFloat(lng)])
+
+  useEffect(() => {
+    let start = null
+    const duration = 1000 // 1 segundo para transicionar suavemente entre puntos de telemetria
+    const startLat = animatedPosition[0]
+    const startLng = animatedPosition[1]
+    const targetLat = parseFloat(lat)
+    const targetLng = parseFloat(lng)
+
+    if (isNaN(targetLat) || isNaN(targetLng)) return
+
+    let animationFrameId = null
+
+    const animate = (timestamp) => {
+      if (!start) start = timestamp
+      const progress = timestamp - start
+      const percent = Math.min(progress / duration, 1)
+
+      const currentLat = startLat + (targetLat - startLat) * percent
+      const currentLng = startLng + (targetLng - startLng) * percent
+
+      setAnimatedPosition([currentLat, currentLng])
+
+      if (percent < 1) {
+        animationFrameId = requestAnimationFrame(animate)
+      }
+    }
+
+    animationFrameId = requestAnimationFrame(animate)
+
+    return () => {
+      if (animationFrameId) cancelAnimationFrame(animationFrameId)
+    }
+  }, [lat, lng])
+
+
 
   // Angulo de rotacion para la aguja del velocimetro (de -90 a 90 grados)
   const speedLimit = 120.0
@@ -307,14 +403,14 @@ export default function App() {
 
                   {/* Detalles del riesgo */}
                   <div className="flex-1 space-y-2">
-                    <div className="rounded-none border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-mono tracking-wider text-amber-400 uppercase">
+                    <div className={`rounded-none border px-2 py-0.5 text-[10px] font-mono tracking-wider uppercase ${riskColor}`}>
                       RIESGO: {riskStatus}
                     </div>
                     <p className="text-[10px] text-zinc-400 font-mono">
                       Viaje ID: {displayDoc.id_viaje}
                     </p>
                     <p className="text-[10px] text-zinc-400 font-mono">
-                      Varianza: {displayDoc.ia_predictiva.aceleracion_varianza_kmhs2.toFixed(1)} (km/h/s)²
+                      Varianza: {(displayDoc?.ia_predictiva?.aceleracion_varianza_kmhs2 ?? 0).toFixed(1)} (km/h/s)²
                     </p>
                   </div>
                 </div>
@@ -323,35 +419,34 @@ export default function App() {
                 <div className="mt-4 pt-4 border-t border-zinc-800/60 space-y-3 text-xs font-mono">
                   <div className="flex justify-between items-center text-[10px] text-zinc-400 mb-1">
                     <span>MATRIZ_PONDERACION</span>
-                    <span>PESO %</span>
+                    <span>IMPACTO %</span>
                   </div>
                   <div className="space-y-3">
                     {[
-                      { label: 'Varianza Aceleracion', field: 'varianza_acel' },
-                      { label: 'Excesos de Velocidad', field: 'exceso_velocidad' },
-                      { label: 'Frenadas Bruscas', field: 'frenadas_bruscas' }
-                    ].map(({ label, field }) => {
-                      const weight = displayDoc.ia_predictiva?.ponderaciones_matriz?.[field] ?? 0;
+                      { label: 'Varianza Aceleracion', field: 'varianza_acel',     barColor: '#10b981' },
+                      { label: 'Excesos de Velocidad', field: 'exceso_velocidad',  barColor: '#f59e0b' },
+                      { label: 'Frenadas Bruscas',     field: 'frenadas_bruscas',  barColor: '#f43f5e' }
+                    ].map(({ label, field, barColor }) => {
+                      const weight = displayDoc?.ia_predictiva?.ponderaciones_matriz?.[field] ?? 0;
+                      // Normaliza coeficientes decimales (0-1) o enteros (0-100) a base 100
+                      const getPercentage = (val) => { if (!val) return 0; return val <= 1 ? val * 100 : val; };
+                      const pct = Math.min(getPercentage(weight), 100).toFixed(1);
                       return (
                         <div key={field}>
                           <div className="flex justify-between text-[10px] mb-1 text-slate-300">
                             <span>{label}</span>
-                            <span>{(weight * 100).toFixed(0)}%</span>
+                            <span style={{ color: barColor }}>{pct}%</span>
                           </div>
-                          <div className="flex gap-0.5 h-1.5 w-full bg-zinc-950 border border-zinc-900 p-0.5">
-                            {[...Array(10)].map((_, idx) => {
-                              const isFilled = idx < (weight * 10);
-                              return (
-                                <div 
-                                  key={idx} 
-                                  className={`h-full flex-1 rounded-none ${
-                                    isFilled 
-                                      ? (label.includes('Frenadas') ? 'bg-red-500/80' : label.includes('Excesos') ? 'bg-amber-500/80' : 'bg-emerald-500/80') 
-                                      : 'bg-zinc-800/30'
-                                  }`}
-                                />
-                              );
-                            })}
+                          <div className="relative h-1.5 w-full bg-zinc-900 border border-zinc-800 overflow-hidden">
+                            <div
+                              className="absolute inset-y-0 left-0 h-full"
+                              style={{
+                                width: `${pct}%`,
+                                backgroundColor: barColor,
+                                boxShadow: `0 0 6px ${barColor}80`,
+                                transition: 'width 0.6s ease-out'
+                              }}
+                            />
                           </div>
                         </div>
                       );
@@ -453,16 +548,19 @@ export default function App() {
                       attribution='&copy; <a href="https://carto.com/">CARTO</a>'
                     />
                     
+                    {/* Componente de auto-centrado del mapa */}
+                    <MapRecenter lat={parseFloat(lat)} lng={parseFloat(lng)} />
+
                     {/* Trazado de la trayectoria recorrida del viaje */}
-                    {historialRuta.length > 0 && (
+                    {routeHistory.length > 0 && (
                       <Polyline 
-                        positions={historialRuta} 
+                        positions={routeHistory} 
                         pathOptions={{ color: '#06b6d4', weight: 2, opacity: 0.8, dashArray: '4, 4' }} 
                       />
                     )}
 
                     {/* Marcador vectorial de la posición en tiempo real */}
-                    <Marker position={[lat, lng]} />
+                    <Marker position={animatedPosition} icon={customIcon} />
                   </MapContainer>
                 </div>
               </div>

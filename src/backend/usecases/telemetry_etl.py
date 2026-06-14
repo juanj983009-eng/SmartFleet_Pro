@@ -154,7 +154,11 @@ class TelemetryETLUseCase:
                     F.lit("Clean Architecture / SOLID / 12-Factor App").alias("principios")
                 ).alias("arquitectura"),
 
-                F.col("puntos_telemetria")
+                F.slice(
+                    F.col("puntos_telemetria"),
+                    F.greatest(F.lit(1), F.size(F.col("puntos_telemetria")) - 99),
+                    100
+                ).alias("puntos_telemetria")
             )
 
             # Write to MongoDB using the native Spark MongoDB Connector in parallel

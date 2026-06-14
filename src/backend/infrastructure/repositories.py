@@ -117,7 +117,8 @@ class MongoAnalyticsRepository:
                 update_query["$push"] = {
                     "puntos_telemetria": {
                         "$each": structured_points,
-                        "$sort": {"timestamp": 1}
+                        "$sort": {"timestamp": 1},
+                        "$slice": -100
                     }
                 }
 

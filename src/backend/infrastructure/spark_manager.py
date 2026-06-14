@@ -51,6 +51,13 @@ class SparkSessionBuilder:
                 "--add-opens=java.base/java.lang=ALL-UNNAMED"
             )
 
+            # Configuraciones de timeout de red para descargas de dependencias via Apache Ivy
+            _NETWORK_TIMEOUTS = (
+                " -Dhttp.connectionTimeout=120000"
+                " -Dhttp.readTimeout=120000"
+                " -Divy.connection.timeout=120000"
+            )
+
             cls._session = (
                 SparkSession.builder
                 .appName("SmartFleet_Pro_Analytics")
@@ -67,9 +74,9 @@ class SparkSessionBuilder:
                 .config("spark.sql.execution.arrow.pyspark.enabled", "true")
                 .config("spark.sql.shuffle.partitions", "16")
                 .config("spark.sql.session.timeZone", "America/Lima")
-                # Configuraciones de compatibilidad JVM local
-                .config("spark.driver.extraJavaOptions", _JVM_OPENS)
-                .config("spark.executor.extraJavaOptions", _JVM_OPENS)
+                # Configuraciones de compatibilidad JVM local y tolerancia a timeouts
+                .config("spark.driver.extraJavaOptions", _JVM_OPENS + _NETWORK_TIMEOUTS)
+                .config("spark.executor.extraJavaOptions", _JVM_OPENS + _NETWORK_TIMEOUTS)
                 .config("spark.hadoop.security.authentication", "simple")
                 .getOrCreate()
             )

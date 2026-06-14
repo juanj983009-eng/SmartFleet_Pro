@@ -5,14 +5,18 @@ services:
   spark_engine:
     build: .
     container_name: spark_engine_container
+    restart: always
     env_file:
       - .env
     volumes:
       - .:/app
     depends_on:
-      - cassandra_fleet
-      - mongo_fleet
-      - postgres_fleet
+      cassandra_fleet:
+        condition: service_healthy
+      mongo_fleet:
+        condition: service_healthy
+      postgres_fleet:
+        condition: service_healthy
     networks:
       - fleet_network
 
@@ -36,7 +40,7 @@ services:
       mongo_fleet:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/fleet/analytics')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -73,6 +77,12 @@ services:
       - "9042:9042"
     volumes:
       - cassandra_data:/var/lib/cassandra
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'describe cluster' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
     networks:
       - fleet_network
 
@@ -111,8 +121,30 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     networks:
       - fleet_network
+
+  # Ingestador y simulador automático de telemetría (Ingesta en Cassandra)
+  telemetry_simulator:
+    build: .
+    container_name: telemetry_simulator
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    depends_on:
+      cassandra_fleet:
+        condition: service_healthy
+    networks:
+      - fleet_network
+    command: python -c "import sys, time; sys.path.append(\"src/backend\"); from simulador_gps import simular_movimiento; [simular_movimiento(\"TRIP-MANUAL-TEST-99\", -12.0464, -77.0428) or time.sleep(1) for _ in iter(int, 1)]"
 
 # Declaración de volúmenes persistentes locales
 volumes:

@@ -116,12 +116,21 @@ def main() -> None:
             postgres_repo=postgres_repo
         )
 
-        # 6. Ejecución del flujo ETL
-        etl_pipeline.execute_pipeline()
+        # 6. Ejecución del flujo ETL en bucle continuo de escucha (resistencia ante fallos)
+        import time
+        logger.info("[BOOTSTRAP] Iniciando bucle continuo de procesamiento analitico...")
+        while True:
+            try:
+                etl_pipeline.execute_pipeline()
+            except Exception as err:
+                logger.error(f"[LOOP ERROR] Error en el ciclo de procesamiento: {err}")
+            
+            # Intervalo de sondeo de telemetria en vivo
+            time.sleep(10)
 
     except Exception as e:
         logger.fatal(
-            f"[BOOTSTRAP FATAL] Error crítico en la inicialización o composición del sistema: {e}",
+            f"[BOOTSTRAP FATAL] Error critico en la inicializacion o composicion del sistema: {e}",
             exc_info=True
         )
         sys.exit(1)

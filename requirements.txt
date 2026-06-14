@@ -10,3 +10,4 @@ requests
 sse-starlette
 motor
 sseclient-py
+cassandra-driver

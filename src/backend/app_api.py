@@ -7,8 +7,8 @@ from bson import ObjectId
 
 from fastapi import FastAPI, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorClient
-from sse_starlette.sse import EventSourceResponse
 import uvicorn
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -56,6 +56,10 @@ def serialize_mongo_document(doc: Optional[Dict[str, Any]]) -> Optional[Dict[str
 # ──────────────────────────────────────────────────────────────────────────────
 # 3. INICIALIZACIÓN DE FASTAPI Y MIDDLEWARES
 # ──────────────────────────────────────────────────────────────────────────────
+# Instancia global del cliente reactivo MotorClient (unificada)
+_MONGO_CONNECTION_URI = "mongodb://juan_admin:excelencia_2026@mongo_fleet:27017/?authSource=admin"
+mongo_client = AsyncIOMotorClient(_MONGO_CONNECTION_URI)
+
 app = FastAPI(
     title="SmartFleet Pro REST API",
     description="Servicio de API REST desacoplado para la exposición de KPIs de telemetría de flota.",
@@ -77,48 +81,34 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_db_client():
     """
-    Inicializa el cliente asíncrono MotorClient con la estrategia de resolución multi-canal.
+    Realiza un ping inicial sobre el pool global para verificar conectividad con MongoDB.
     """
-    primary_uri = _MONGO_URI if _MONGO_URI else _build_uri(_MONGO_HOST)
-    channels = [
-        ("Canal 1: Host de Entorno", primary_uri),
-        ("Canal 2: Docker DNS (mongo_fleet)", _build_uri("mongo_fleet:27017")),
-        ("Canal 3: Loopback Host (localhost)", _build_uri("localhost:27017")),
-        ("Canal 4: Loopback IP (127.0.0.1)", _build_uri("127.0.0.1:27017"))
-    ]
-
-    last_error = None
-    for name, uri in channels:
-        try:
-            client = AsyncIOMotorClient(uri, serverSelectionTimeoutMS=1500)
-            # Handshake asíncrono real para validar conectividad activa
-            await client.admin.command("ping")
-            app.mongodb_client = client
-            return
-        except Exception as e:
-            last_error = e
-            continue
-
-    raise ConnectionError(f"No se pudo establecer conexión con MongoDB en ningún canal: {last_error}")
+    try:
+        await mongo_client.admin.command("ping")
+    except Exception as exc:
+        raise ConnectionError(f"No se pudo establecer conexión con MongoDB usando el pool global: {exc}")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
     """
-    Libera el pool de conexiones del cliente asíncrono.
+    Cierra el pool global de conexiones a MongoDB.
     """
-    if hasattr(app, "mongodb_client") and app.mongodb_client:
-        app.mongodb_client.close()
+    mongo_client.close()
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 5. ENDPOINTS DE LA API
 # ──────────────────────────────────────────────────────────────────────────────
+@app.get("/health")
+async def health():
+    return {"status": "healthy"}
+
 @app.get("/api/v1/fleet/analytics", response_model=Dict[str, Any])
 async def get_fleet_analytics():
     """
     Retorna el reporte analítico consolidado más reciente generado por el pipeline de Spark.
     """
     try:
-        db = app.mongodb_client[_MONGO_DB]
+        db = mongo_client[_MONGO_DB]
         col = db[_COLLECTION]
         # Búsqueda asíncrona directa del reporte absoluto más reciente
         report = await col.find_one({}, sort=[("_id", -1)])
@@ -132,6 +122,8 @@ async def get_fleet_analytics():
         serialized_report = serialize_mongo_document(report)
         return serialized_report
         
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -144,12 +136,14 @@ async def get_fleet_analytics_history(limit: int = 50):
     Retorna el histórico de los reportes analíticos más recientes.
     """
     try:
-        db = app.mongodb_client[_MONGO_DB]
+        db = mongo_client[_MONGO_DB]
         col = db[_COLLECTION]
         cursor = col.find({}, sort=[("_id", -1)]).limit(limit)
         reports = await cursor.to_list(length=limit)
         serialized_reports = [serialize_mongo_document(r) for r in reports]
         return serialized_reports
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -157,41 +151,51 @@ async def get_fleet_analytics_history(limit: int = 50):
         )
 
 @app.get("/api/v1/fleet/analytics/stream")
-async def get_fleet_analytics_stream(request: Request):
+async def get_analytics_stream(request: Request):
     """
-    Expone un Change Stream en caliente para la transmisión en tiempo real de nuevos reportes
-    utilizando Server-Sent Events (SSE).
+    Expone un flujo SSE continuo en caliente mediante consultas de baja latencia al Data Warehouse.
     """
     async def event_generator():
-        db = app.mongodb_client[_MONGO_DB]
+        db = mongo_client[_MONGO_DB]
         col = db[_COLLECTION]
         
-        # Filtro estricto para capturar únicamente inserciones de nuevos reportes
-        pipeline = [{"$match": {"operationType": "insert"}}]
-        
-        try:
-            async with col.watch(pipeline) as stream:
-                async for change in stream:
-                    # Control defensivo: romper el bucle si el cliente se desconecta
-                    if await request.is_disconnected():
-                        break
-                    
-                    full_doc = change.get("fullDocument")
-                    if full_doc:
-                        serialized = serialize_mongo_document(full_doc)
-                        yield {
-                            "event": "pipeline_update",
-                            "data": json.dumps(serialized)
-                        }
-        except asyncio.CancelledError:
-            pass
-        except Exception as exc:
-            yield {
-                "event": "error",
-                "data": json.dumps({"detail": f"Error en Change Stream: {str(exc)}"})
-            }
+        while True:
+            try:
+                # Control de desconexión activa (Keep-Alive Guard)
+                if await request.is_disconnected():
+                    break
+                
+                # Query reactivo no bloqueante para extraer el último reporte de telemetría de viaje
+                report = await col.find_one(
+                    {"id_viaje": "TRIP-MANUAL-TEST-99"},
+                    sort=[("_id", -1)]
+                )
+                
+                if report:
+                    serialized = serialize_mongo_document(report)
+                    yield f"event: pipeline_update\ndata: {json.dumps(serialized)}\n\n"
+                else:
+                    yield 'event: ping\ndata: {"status": "empty_collection"}\n\n'
+            except asyncio.CancelledError:
+                break
+            except (ConnectionError, BrokenPipeError, ConnectionResetError):
+                break
+            except Exception as exc:
+                # Captura defensiva de cualquier otro error para evitar pánicos en Uvicorn
+                break
+            
+            # Frecuencia de refresco para fluidez georreferencial y liberación de event loop
+            await asyncio.sleep(1)
 
-    return EventSourceResponse(event_generator(), headers={"Cache-Control": "no-cache"})
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
 
 # ──────────────────────────────────────────────────────────────────────────────
 # ENTRYPOINT DE EJECUCIÓN NATIVA

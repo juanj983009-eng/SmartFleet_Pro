@@ -6,3 +6,25 @@
   0%   { opacity: 0; transform: translateX(-4px); }
   100% { opacity: 1; transform: translateX(0); }
 }
+
+/* Ancho y alto de la barra */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+/* Fondo del canal de la barra (oculto/transparente) */
+::-webkit-scrollbar-track {
+    background: rgba(16, 16, 18, 0.4);
+    border-radius: 4px;
+}
+/* Color del indicador de posicion (Thumb) alineado con la paleta del HUD */
+::-webkit-scrollbar-thumb {
+    background: rgba(57, 255, 20, 0.3);
+    border-radius: 4px;
+    transition: background 0.3s ease;
+}
+/* Efecto hover interactivo */
+::-webkit-scrollbar-thumb:hover {
+    background: rgba(57, 255, 20, 0.6);
+}
+
