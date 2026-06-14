@@ -26,6 +26,15 @@ class PredictiveAnalyticsEngine:
             F.count("*").alias("total_muestras"),
             F.avg("velocidad_kmh").alias("velocidad_promedio_kmh"),
             F.max("velocidad_kmh").alias("velocidad_maxima_kmh"),
+            F.last("latitud").alias("ultimo_latitud"),
+            F.last("longitud").alias("ultimo_longitud"),
+            F.collect_list(
+                F.struct(
+                    F.col("velocidad_kmh").cast("double").alias("velocidad"),
+                    F.col("aceleracion").cast("double").alias("aceleracion"),
+                    F.col("tiempo").cast("string").alias("tiempo")
+                )
+            ).alias("puntos_telemetria"),
             
             # Conteo de excesos de velocidad
             F.sum(

@@ -517,10 +517,14 @@ class TelemetryETLUseCase:
             #   los límites de cada viaje; el lag NO cruzará entre viajes distintos.
             # • orderBy("tiempo_dt") asegura el orden cronológico correcto para
             #   que delta_v = v(t) - v(t-1) tenga sentido físico.
-            window_spec = (
+            window_spec_base = (
                 Window
                 .partitionBy("id_viaje")
                 .orderBy("tiempo_dt")
+            )
+            window_spec = (
+                window_spec_base
+                .rowsBetween(-10, 0)
             )
 
             # Performance Optimization: Repartition by partition key to minimize shuffle stages
@@ -535,8 +539,8 @@ class TelemetryETLUseCase:
 
                 # lag(..., 1) retorna el valor de la fila ANTERIOR en la ventana.
                 # La primera fila de cada partición retorna NULL (no hay fila previa).
-                .withColumn("prev_velocidad", F.lag("velocidad_kmh", 1).over(window_spec).cast("double"))
-                .withColumn("prev_tiempo_dt", F.lag("tiempo_dt",    1).over(window_spec))
+                .withColumn("prev_velocidad", F.lag("velocidad_kmh", 1).over(window_spec_base).cast("double"))
+                .withColumn("prev_tiempo_dt", F.lag("tiempo_dt",    1).over(window_spec_base))
 
                 # delta_v = variación de velocidad entre dos muestras consecutivas [km/h] with double precision
                 .withColumn(

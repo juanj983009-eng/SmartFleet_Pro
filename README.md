@@ -49,19 +49,40 @@ flowchart TD
     end
 ```
 
+### Arquitectura de la Interfaz de Usuario (HUD)
+* **Sistema de Visualización**: Lienzo táctico de opacidad cero (`bg-transparent`) con persistencia de micro-grilla milimetrada de ingeniería para un acabado visual industrial y sobrio.
+* **Motor Gráfico de Fondo**: Escena 3D acelerada por hardware mediante WebGL utilizando React Three Fiber y Three.js (versiones estables fijadas para React 18.3.1) que proyecta una nube dinámica de partículas interactiva.
+* **Capa Geoespacial**: Módulo `LOGISTICA_TRACKING_GEO` implementado con React Leaflet v4 y CartoDB Dark Matter para la proyección de coordenadas en tiempo real consumidad a través de Server-Sent Events (SSE) de baja latitud.
+
+### Pipeline de Micro-Interacciones en Caliente
+* **Velocímetro SVG**: Transición con inercia física de vectores (`transition-all duration-300 ease-out`) que proporciona fluidez al recorrido de las agujas e indicadores.
+* **Tarjetas de Métricas y Tracking**: Iluminación perimetral (Glow Effect) mediante una paleta cromática de control análoga:
+  * **Cian** para georreferenciación y métricas de navegación.
+  * **Ámbar** para telemetría predictiva y logs de auditoría.
+  * **Verde Esmeralda** para el estado de latencia y disponibilidad de la API.
+* **Terminales TTY**: Simulación de flujo de comandos tipo Unix (`tail -f`) con animaciones de entrada (`fadeIn`) parpadeantes y estilo de fósforo verde.
+
 ---
 
 ## 2. Stack Tecnológico Políglota
 
 | Componente | Tecnología | Propósito en la Arquitectura |
 | :--- | :--- | :--- |
-| **Frontend** | React y Tailwind CSS | Interfaz reactiva SPA optimizada con Splash Screen UX de alta fidelidad. Bundle final purgado y minimizado a ~24 KB. |
+| **Frontend** | React, WebGL (Three.js) y Tailwind CSS | Interfaz reactiva HUD de alto rendimiento visual con aceleración WebGL y mapas táctiles en tiempo real. |
 | **Backend API** | FastAPI y Uvicorn | Exposición REST desacoplada, enrutamiento asíncrono asíncrono nativo y alto rendimiento de concurrencia. |
 | **Big Data Engine** | PySpark 3.5 (JVM) | Procesamiento paralelo distribuido y transformaciones matemáticas de series temporales masivas. |
 | **Almacenamiento ACID** | PostgreSQL | Persistencia relacional transaccional para bitácoras históricas y auditorías de seguridad operacional. |
 | **Capa NoSQL Temporal** | Apache Cassandra | Data Lake analítico de alta velocidad de escritura optimizado para la ingesta masiva de series temporales de GPS. |
 | **Capa NoSQL Documental** | MongoDB | Almacén analítico consolidado (Data Warehouse) con esquemas BSON flexibles para el perfilado dinámico de vehículos. |
 | **Orquestación** | Docker y Docker Compose | Contenerización completa y enlace de red privada aislada resuelta mediante DNS interno de servicios. |
+
+### Dependencias Adicionales del Contenedor Frontend
+Para dar soporte a la aceleración gráfica 3D y a la proyección geográfica interactiva, el contenedor de frontend incorpora las siguientes dependencias críticas:
+* `three` (^0.160.0)
+* `@react-three/fiber` (^8.17.10)
+* `@react-three/drei` (^9.102.6)
+* `leaflet` (^1.9.4)
+* `react-leaflet` (^4.2.1)
 
 ---
 

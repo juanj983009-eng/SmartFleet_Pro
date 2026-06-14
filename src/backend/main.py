@@ -4,17 +4,30 @@ import sys
 # ──────────────────────────────────────────────────────────────────────────────
 # 0. CONFIGURACIÓN DE ENTORNOS LOCALES PARA SPARK / JVM (HADOOP & JAVA)
 # ──────────────────────────────────────────────────────────────────────────────
-_JAVA_HOME  = r"D:\Java17\openjdk-17.0.2_windows-x64_bin\jdk-17.0.2"
-_HADOOP_HOME = r"D:\Hadoop"
+# Intentar leer configuraciones prioritariamente desde las variables de entorno
+_JAVA_HOME = os.getenv("JAVA_HOME")
+_HADOOP_HOME = os.getenv("HADOOP_HOME")
 
-os.environ.setdefault("JAVA_HOME",  _JAVA_HOME)
-os.environ.setdefault("HADOOP_HOME", _HADOOP_HOME)
+# Mecanismo de fallback defensivo si el sistema operativo anfitrión es Windows
+if not _JAVA_HOME and os.name == "nt":
+    _JAVA_HOME = r"D:\Java17\openjdk-17.0.2_windows-x64_bin\jdk-17.0.2"
+if not _HADOOP_HOME and os.name == "nt":
+    _HADOOP_HOME = r"D:\Hadoop"
 
-_path_entries = [
-    os.path.join(os.environ["JAVA_HOME"],  "bin"),
-    os.path.join(os.environ["HADOOP_HOME"], "bin"),
-]
-os.environ["PATH"] = os.pathsep.join(_path_entries) + os.pathsep + os.environ.get("PATH", "")
+if _JAVA_HOME:
+    os.environ["JAVA_HOME"] = _JAVA_HOME
+if _HADOOP_HOME:
+    os.environ["HADOOP_HOME"] = _HADOOP_HOME
+
+# Construir PATH solo si las variables están definidas
+_path_entries = []
+if os.getenv("JAVA_HOME"):
+    _path_entries.append(os.path.join(os.environ["JAVA_HOME"], "bin"))
+if os.getenv("HADOOP_HOME"):
+    _path_entries.append(os.path.join(os.environ["HADOOP_HOME"], "bin"))
+
+if _path_entries:
+    os.environ["PATH"] = os.pathsep.join(_path_entries) + os.pathsep + os.environ.get("PATH", "")
 
 _JVM_FLAGS = (
     "--add-opens=java.base/javax.security.auth=ALL-UNNAMED "

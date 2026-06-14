@@ -54,11 +54,11 @@ class SparkSessionBuilder:
             cls._session = (
                 SparkSession.builder
                 .appName("SmartFleet_Pro_Analytics")
-                # Descarga de JARs nativos para conectividad Cassandra y PostgreSQL
                 .config(
                     "spark.jars.packages",
                     "com.datastax.spark:spark-cassandra-connector_2.12:3.5.0,"
-                    "org.postgresql:postgresql:42.7.2"
+                    "org.postgresql:postgresql:42.7.2,"
+                    "org.mongodb.spark:mongo-spark-connector_2.12:10.3.0"
                 )
                 # Configuración de Cassandra con resolución dinámica / fallback
                 .config("spark.cassandra.connection.host", resolved_cassandra_host)

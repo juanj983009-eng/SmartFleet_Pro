@@ -1,635 +1,537 @@
-const { useState, useEffect, useRef } = React;
+import React, { useState, useEffect } from 'react'
+import {
+  Activity,
+  Shield,
+  Radio,
+  Gauge as GaugeIcon,
+  MapPin
+} from 'lucide-react'
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip
+} from 'recharts'
+import { MapContainer, TileLayer, Marker, Polyline } from 'react-leaflet'
+import 'leaflet/dist/leaflet.css'
+import VectoresFondo from './components/VectoresFondo'
 
-function AnimatedNumber({ value, duration = 800, suffix = "" }) {
-    const [displayValue, setDisplayValue] = useState(value);
-    const [flash, setFlash] = useState(false);
-    const prevValueRef = useRef(value);
+export default function App() {
+  const [analyticsData, setAnalyticsData] = useState([])
+  const [apiStatus, setApiStatus] = useState('OFFLINE')
 
-    useEffect(() => {
-        if (prevValueRef.current === value) return;
-        prevValueRef.current = value;
+  useEffect(() => {
+    const baseApiUrl = "http://localhost:8000/api/v1/fleet/analytics"
+    const streamUrl = `${baseApiUrl}/stream`
+    let eventSource = null
 
-        // Activar flash de actualización
-        setFlash(true);
-        const flashTimeout = setTimeout(() => setFlash(false), 800);
+    async function hydrateInitialState() {
+      try {
+        const response = await fetch(baseApiUrl)
+        if (response.ok) {
+          const data = await response.json()
+          
+          // TRAZA DE CONTROL CRÍTICA
+          console.log("[ANTIGRAVITY DEBUG] Payload recibido de la API:", data)
+          console.log("[ANTIGRAVITY DEBUG] Tipo de dato:", typeof data, "Es Array:", Array.isArray(data))
 
-        const start = parseFloat(displayValue) || 0;
-        const end = parseFloat(value) || 0;
-        if (isNaN(start) || isNaN(end)) {
-            setDisplayValue(value);
-            return () => clearTimeout(flashTimeout);
-        }
-
-        const startTime = performance.now();
-
-        let animationFrameId;
-        const animate = (now) => {
-            const progress = Math.min((now - startTime) / duration, 1);
-            const ease = progress * (2 - progress); // easeOutQuad
-            const current = start + (end - start) * ease;
-            
-            if (Number.isInteger(end)) {
-                setDisplayValue(Math.round(current));
-            } else {
-                setDisplayValue(parseFloat(current.toFixed(2)));
+          if (data) {
+            const formattedData = Array.isArray(data) ? data : [data]
+            console.log("[ANTIGRAVITY DEBUG] Dataset formateado para React:", formattedData)
+            if (formattedData.length > 0) {
+              setAnalyticsData(formattedData)
             }
-
-            if (progress < 1) {
-                animationFrameId = requestAnimationFrame(animate);
-            } else {
-                setDisplayValue(end);
-            }
-        };
-
-        animationFrameId = requestAnimationFrame(animate);
-
-        return () => {
-            clearTimeout(flashTimeout);
-            cancelAnimationFrame(animationFrameId);
-        };
-    }, [value]);
-
-    return (
-        <span class={`transition-all duration-300 ${flash ? 'text-emerald-300 font-bold drop-shadow-[0_0_8px_rgba(52,211,153,0.6)]' : ''}`}>
-            {typeof displayValue === 'number' ? displayValue.toLocaleString() : displayValue}
-            {suffix}
-        </span>
-    );
-}
-
-function CustomDropdown({ label, options, value, onChange }) {
-    const [isOpen, setIsOpen] = useState(false);
-    const containerRef = useRef(null);
-
-    const selectedOption = options.find(opt => opt.value === value) || options[0];
-
-    useEffect(() => {
-        function handleClickOutside(event) {
-            if (containerRef.current && !containerRef.current.contains(event.target)) {
-                setIsOpen(false);
-            }
-        }
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, []);
-
-    return (
-        <div class="flex flex-col relative" ref={containerRef}>
-            <span class="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">{label}</span>
-            
-            {/* Trigger Button */}
-            <button 
-                onClick={() => setIsOpen(!isOpen)}
-                type="button"
-                class={`bg-slate-900/80 hover:bg-slate-850/80 border rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none font-medium font-mono flex items-center justify-between min-w-[180px] text-left transition duration-200 ${
-                    isOpen 
-                    ? 'border-emerald-500/50 shadow-[0_0_10px_rgba(16,185,129,0.15)]' 
-                    : 'border-white/10 hover:border-emerald-500/30'
-                }`}
-            >
-                <span>{selectedOption.label}</span>
-                <svg class={`w-4 h-4 ml-2 text-slate-500 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7" />
-                </svg>
-            </button>
-
-            {/* Dropdown Options List */}
-            {isOpen && (
-                <div class="absolute top-[100%] left-0 mt-1.5 w-full z-50 bg-slate-950 border border-slate-800/80 shadow-[0_4px_20px_rgba(0,0,0,0.5)] rounded-lg py-1 overflow-hidden backdrop-blur-md animate-fade-in">
-                    {options.map((option) => {
-                        const isSelected = option.value === value;
-                        return (
-                            <div 
-                                key={option.value}
-                                onClick={() => {
-                                    onChange(option.value);
-                                    setIsOpen(false);
-                                }}
-                                class={`px-3 py-2 text-xs font-mono cursor-pointer transition duration-150 flex items-center justify-between ${
-                                    isSelected 
-                                    ? 'bg-emerald-500/10 text-emerald-400 font-bold' 
-                                    : 'text-slate-300 hover:bg-slate-900 hover:text-white'
-                                }`}
-                            >
-                                <span>{option.label}</span>
-                                {isSelected && (
-                                    <svg class="w-3.5 h-3.5 text-emerald-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-                                    </svg>
-                                )}
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
-        </div>
-    );
-}
-
-function App() {
-    const [data, setData] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [isLoading, setIsLoading] = useState(true);
-    const [apiFinished, setApiFinished] = useState(false);
-    const [timerFinished, setTimerFinished] = useState(false);
-    const [error, setError] = useState(null);
-    const [apiConnected, setApiConnected] = useState(false);
-    const [animateIn, setAnimateIn] = useState(false);
-    
-    const [selectedFleet, setSelectedFleet] = useState("all");
-    const [selectedPeriod, setSelectedPeriod] = useState("24h");
-    
-    // Constantes para el anillo SVG
-    const circumference = 2 * Math.PI * 40;
-    const [dashOffset, setDashOffset] = useState(circumference);
-
-    const fetchData = async (isFirstLoad = false) => {
-        try {
-            const response = await fetch("http://127.0.0.1:8000/api/v1/fleet/analytics");
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            const json = await response.json();
-            setData(json);
-            setApiConnected(true);
-            setError(null);
-            
-            const score = json.ia_predictiva.score_riesgo_global;
-            const targetOffset = circumference * (1 - score / 100);
-
-            // Animar la carga circular del anillo
-            if (isFirstLoad || loading) {
-                setDashOffset(circumference);
-                setTimeout(() => {
-                    setDashOffset(targetOffset);
-                }, 150);
-            } else {
-                setDashOffset(targetOffset);
-            }
-        } catch (err) {
-            setError(err.message);
-            setApiConnected(false);
-        } finally {
-            setLoading(false);
-            if (isFirstLoad) {
-                setApiFinished(true);
-            }
-        }
-    };
-
-    // Consulta inicial y polling cada 4 segundos
-    useEffect(() => {
-        fetchData(true);
-        const interval = setInterval(() => {
-            fetchData(false);
-        }, 4000);
-        return () => clearInterval(interval);
-    }, []);
-
-    // Temporizador de 3 segundos para asegurar un mínimo de visualización del Splash Screen
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            setTimerFinished(true);
-        }, 3000);
-        return () => clearTimeout(timer);
-    }, []);
-
-    // Ocultar Splash Screen solo cuando la API haya terminado y el temporizador de 3s se haya cumplido
-    useEffect(() => {
-        if (apiFinished && timerFinished) {
-            setIsLoading(false);
-        }
-    }, [apiFinished, timerFinished]);
-
-    // Desvanecimiento suave controlado una vez finaliza el loading
-    useEffect(() => {
-        if (!loading && data) {
-            const timer = setTimeout(() => setAnimateIn(true), 50);
-            return () => clearTimeout(timer);
+          }
         } else {
-            setAnimateIn(false);
+          console.error("[ANTIGRAVITY] Respuesta de API no exitosa:", response.status)
         }
-    }, [loading, data]);
+      } catch (err) {
+        console.error("[ANTIGRAVITY] Error crítico en fetch de hidratación:", err)
+      }
+    }
 
-    // Clasificación de scoring y estilos adaptativos
-    const getRiskLevel = (score) => {
-        if (score <= 30) return { label: "Seguro", color: "text-emerald-400", border: "border-emerald-500/30", bg: "bg-emerald-500/10" };
-        if (score <= 65) return { label: "Precaución", color: "text-amber-400", border: "border-amber-500/30", bg: "bg-amber-500/10" };
-        return { label: "Crítico", color: "text-rose-400", border: "border-rose-500/30", bg: "bg-rose-500/10" };
-    };
+    // 2. Conexión del canal en tiempo real para mutaciones subsecuentes
+    function connectStream() {
+      eventSource = new EventSource(streamUrl)
 
-    const risk = data ? getRiskLevel(data.ia_predictiva.score_riesgo_global) : null;
+      eventSource.onopen = () => {
+        setApiStatus('CONNECT_OK')
+      }
 
-    return (
-        <div class="flex h-screen w-screen relative overflow-hidden">
-            {/* Splash Screen Loader (Capa de carga a pantalla completa) */}
-            {isLoading && (
-                <div class="fixed inset-0 bg-[#0A0F1D] flex flex-col items-center justify-center z-[9999] transition-all duration-700 ease-in-out">
-                    {/* Cyber-Grid de fondo técnico */}
-                    <div class="absolute inset-0 pointer-events-none bg-[radial-gradient(#0f172a_1px,transparent_1px)] [background-size:24px_24px] opacity-25"></div>
-                    <div class="absolute inset-0 pointer-events-none" style={{
-                        backgroundImage: `
-                            linear-gradient(rgba(16, 185, 129, 0.03) 1px, transparent 1px), 
-                            linear-gradient(90deg, rgba(16, 185, 129, 0.03) 1px, transparent 1px)
-                        `,
-                        backgroundSize: '40px 40px'
-                    }}></div>
-                    
-                    {/* Glow esmeralda difuminado */}
-                    <div class="absolute w-[450px] h-[450px] bg-emerald-500/10 rounded-full blur-[120px] mix-blend-screen pointer-events-none animate-pulse" style={{ animationDuration: '4s' }}></div>
-                    <div class="absolute w-[250px] h-[250px] bg-emerald-700/5 rounded-full blur-[80px] pointer-events-none"></div>
+      eventSource.addEventListener('pipeline_update', (event) => {
+        try {
+          const payload = JSON.parse(event.data)
+          setAnalyticsData((prev) => {
+            if (prev.length > 0 && payload.fecha_analisis <= prev[0].fecha_analisis) return prev
+            return [payload, ...prev].slice(0, 50)
+          })
+        } catch (err) {
+          console.error("Error parseando stream asíncrono:", err)
+        }
+      })
 
-                    <div class="relative flex flex-col items-center text-center max-w-sm px-6 space-y-8 animate-fade-in">
-                        {/* Glowing Logo Circle with Drop Shadow */}
-                        <div class="relative flex items-center justify-center w-28 h-28 rounded-3xl border border-emerald-500/30 bg-slate-950/80 shadow-[0_0_50px_rgba(16,185,129,0.15)] filter drop-shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-transform duration-500 hover:scale-105">
-                            {/* Anillos de pulsación */}
-                            <div class="absolute -inset-1.5 rounded-3xl border border-emerald-500/20 animate-pulse opacity-40"></div>
-                            <div class="absolute -inset-3 rounded-3xl border border-emerald-500/10 animate-ping opacity-25" style={{ animationDuration: '3s' }}></div>
-                            
-                            {/* Isotipo con drop-shadow */}
-                            <svg class="w-12 h-12 text-emerald-400 filter drop-shadow-[0_0_8px_rgba(52,211,153,0.5)]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z" />
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 011-1v-4h4.182a1 1 0 01.778.368l2.678 3.346a1 1 0 01.162.586V16a1 1 0 01-1 1h-1m-4-1a1 1 0 011-1h2" />
-                            </svg>
-                        </div>
+      eventSource.onerror = () => {
+        setApiStatus('OFFLINE')
+        eventSource.close()
+        setTimeout(connectStream, 3000) // Reconexión defensiva con backoff
+      }
+    }
 
-                        <div class="space-y-4 flex flex-col items-center">
-                            <div class="space-y-1">
-                                <h2 class="text-3xl font-black tracking-[0.2em] text-white font-sans mr-[-0.2em] filter drop-shadow-[0_2px_10px_rgba(0,0,0,0.5)]">SMARTFLEET</h2>
-                                <p class="text-[10px] font-bold tracking-[0.4em] text-emerald-400/90 uppercase font-mono mr-[-0.4em]">Predictive Analytics</p>
-                            </div>
-                            
-                            {/* Barra de progreso lineal de carga de sistema */}
-                            <div class="w-56 h-[3px] bg-slate-950/80 rounded-full overflow-hidden border border-white/5 relative shadow-inner">
-                                <div class="absolute top-0 bottom-0 left-0 w-1/2 bg-gradient-to-r from-transparent via-emerald-400 to-transparent animate-infinity-load rounded-full"></div>
-                            </div>
-                            
-                            <div class="flex items-center space-x-2 text-[10px] font-semibold font-mono text-slate-400">
-                                <span class="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                                <span>Inicializando sistema de telemetría...</span>
-                            </div>
-                        </div>
-                    </div>
+    hydrateInitialState().then(() => {
+      connectStream()
+    })
+
+    return () => {
+      if (eventSource) eventSource.close()
+    }
+  }, [])
+
+  const displayDoc = analyticsData[0] || null
+
+  // Helper para extraer la velocidad actual de forma defensiva
+  const points = displayDoc?.puntos_telemetria || []
+  const latestPoint = points.length > 0 ? points[points.length - 1] : null
+  const currentSpeed = latestPoint?.velocidad ?? 0.0
+  const currentAcceleration = latestPoint?.aceleracion ?? 0.0
+
+  const lat = displayDoc?.metricas_basicas?.posicion_actual?.latitud ?? -12.046374
+  const lng = displayDoc?.metricas_basicas?.posicion_actual?.longitud ?? -77.042793
+  const historialRuta = displayDoc?.metricas_basicas?.historial_coordenadas ?? []
+
+  // Angulo de rotacion para la aguja del velocimetro (de -90 a 90 grados)
+  const speedLimit = 120.0
+  const angle = -90 + (Math.min(currentSpeed, speedLimit) / speedLimit) * 180
+
+  // Determinacion del estado de riesgo
+  const riskScore = displayDoc?.ia_predictiva?.score_riesgo_global ?? 0.0
+  let riskStatus = "BAJO"
+  let riskColor = "text-emerald-400 border-emerald-500/20 bg-emerald-500/10"
+  let riskBadge = "bg-emerald-500"
+  if (riskScore > 30.0 && riskScore <= 70.0) {
+    riskStatus = "MODERADO"
+    riskColor = "text-amber-400 border-amber-500/20 bg-amber-500/10"
+    riskBadge = "bg-amber-500"
+  } else if (riskScore > 70.0) {
+    riskStatus = "ALTO"
+    riskColor = "text-rose-400 border-rose-500/20 bg-rose-500/10"
+    riskBadge = "bg-rose-500"
+  }
+
+  // Formato para el eje X de Recharts (Bypass defensivo de propiedades indefinidas)
+  const chartData = points.map((p) => {
+    const timeVal = p?.tiempo ?? ""
+    const timeParts = typeof timeVal === 'string' ? timeVal.split(' ') : []
+    const timeOnly = timeParts.length > 1 ? timeParts[1].split('.')[0] : (timeVal || "N/A")
+    const vel = typeof p?.velocidad === 'number' ? p.velocidad : 0.0
+    const acel = typeof p?.aceleracion === 'number' ? p.aceleracion : 0.0
+    return {
+      name: timeOnly,
+      velocidad: parseFloat(vel.toFixed(2)),
+      aceleracion: parseFloat(acel.toFixed(2))
+    }
+  })
+
+
+  return (
+    <div className="bg-transparent text-zinc-100 min-h-screen relative p-6 font-sans" style={{ backgroundImage: 'linear-gradient(to right, rgba(255, 255, 255, 0.015) 1px, transparent 1px), linear-gradient(to bottom, rgba(255, 255, 255, 0.015) 1px, transparent 1px)', backgroundSize: '20px 20px' }}>
+      <VectoresFondo />
+      {/* Header */}
+      <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 bg-zinc-950 border-b border-zinc-800 p-4 rounded-none">
+        <div>
+          <h1 className="text-xl font-extrabold tracking-tight text-white flex items-center gap-2">
+            <Radio className={`w-5 h-5 ${apiStatus === 'CONNECT_OK' ? 'text-emerald-400 animate-pulse' : 'text-rose-500 animate-pulse'}`} />
+            SmartFleet Pro
+            <span className="text-[10px] font-mono px-2 py-0.5 bg-zinc-950 border border-zinc-800 text-zinc-400 rounded-none">
+              MISION_CONTROL_SYS_V2
+            </span>
+          </h1>
+          <p className="text-xs text-zinc-400 mt-1 font-mono">
+            Canal de telemetria en tiempo real por Server-Sent Events (SSE)
+          </p>
+        </div>
+        <div className="flex items-center gap-3 font-mono text-xs">
+          <div className={`px-3 py-1.5 rounded-none border flex items-center gap-2 ${
+            apiStatus === 'CONNECT_OK' ? 'text-emerald-400 border-emerald-500/20 bg-emerald-500/5' : 'text-rose-400 border-rose-500/20 bg-rose-500/5'
+          }`}>
+            <span className={`w-2 h-2 rounded-full ${apiStatus === 'CONNECT_OK' ? 'bg-emerald-400 animate-ping' : 'bg-rose-500'}`} />
+            API_STATUS: {apiStatus}
+          </div>
+          <div className="bg-black border border-zinc-800 px-3 py-1.5 rounded-none text-zinc-400">
+            BUFFER: {analyticsData.length} / 100
+          </div>
+        </div>
+      </header>
+
+      {!displayDoc ? (
+        <div className="flex flex-col items-center justify-center h-[70vh] border border-dashed border-zinc-800 rounded-none bg-black/20 backdrop-blur-sm">
+          <Activity className="w-10 h-10 text-emerald-500 animate-spin mb-4" />
+          <h2 className="text-md font-semibold tracking-wider text-zinc-300 font-mono">
+            ESPERANDO CAPTURA DE EVENTOS...
+          </h2>
+          <p className="text-xs text-zinc-500 font-mono mt-2 max-w-md text-center">
+            Escuchando cambios activos en mongodb_fleet:analytics_reports a traves del API REST de FastAPI.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          
+          {/* Main Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            {/* Columna Izquierda: KPIs Fisicos / Seguridad */}
+            <div className="space-y-6 lg:col-span-1">
+              
+              {/* Card 1: Velocimetro Analogico */}
+              <div className="rounded-none border border-zinc-800 bg-zinc-900/40 p-4 flex flex-col items-center justify-center relative overflow-hidden transition-all duration-300 ease-in-out hover:border-emerald-500/80 hover:shadow-[0_0_15px_rgba(16,185,129,0.15)]">
+                <div className="absolute top-3 left-4 flex items-center gap-1.5 text-xs text-slate-400 font-mono">
+                  <GaugeIcon className="w-3.5 h-3.5 text-emerald-400" />
+                  MONITOR_VELOCIDAD_REALTIME
                 </div>
-            )}
+                
+                {/* SVG Gauge */}
+                <div className="w-48 h-40 mt-4 relative flex items-center justify-center">
+                  <svg width="200" height="200" className="transform -translate-y-8">
+                    {/* Arco de fondo */}
+                    <path
+                      d="M 30,150 A 80,80 0 0,1 170,150"
+                      fill="none"
+                      stroke="#27272a"
+                      strokeWidth={6}
+                      strokeLinecap="round"
+                    />
+                    {/* Arco de zonas */}
+                    {/* Zona Segura: Verde */}
+                    <path
+                      d="M 30,150 A 80,80 0 0,1 100,70"
+                      fill="none"
+                      stroke="#059669"
+                      strokeWidth={6}
+                      strokeOpacity="0.4"
+                    />
+                    {/* Zona Alerta: Amarillo */}
+                    <path
+                      d="M 100,70 A 80,80 0 0,1 140,88"
+                      fill="none"
+                      stroke="#d97706"
+                      strokeWidth={6}
+                      strokeOpacity="0.4"
+                    />
+                    {/* Zona Critica: Rojo */}
+                    <path
+                      d="M 140,88 A 80,80 0 0,1 170,150"
+                      fill="none"
+                      stroke="#dc2626"
+                      strokeWidth={6}
+                      strokeOpacity="0.4"
+                    />
+                    
+                    {/* Aguja indicadora */}
+                    <line
+                      x1="100" y1="100"
+                      x2={100 + 70 * Math.cos((210 - (displayDoc.metricas_basicas?.velocidad_promedio_kmh ?? 0) * 1.5) * Math.PI / 180)}
+                      y2={100 - 70 * Math.sin((210 - (displayDoc.metricas_basicas?.velocidad_promedio_kmh ?? 0) * 1.5) * Math.PI / 180)}
+                      stroke="#ef4444"
+                      strokeWidth="1.5"
+                      style={{ transition: 'x2 0.3s ease-out, y2 0.3s ease-out', filter: 'drop-shadow(0 0 3px rgba(239,68,68,0.6))' }}
+                    />
+                  </svg>
+                  
+                  {/* Digital Display */}
+                  <div className="absolute bottom-2 text-center">
+                    <span className="font-mono font-bold tracking-tighter text-zinc-100 text-3xl">
+                      {currentSpeed.toFixed(1)}
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-mono block">KM/H</span>
+                  </div>
+                </div>
 
-            {/* Elementos Geométricos en Movimiento (Floating Data Lines) */}
-            <div class="absolute inset-0 z-0 overflow-hidden pointer-events-none">
-                {/* Line 1 - Horizontal Jade */}
-                <div class="absolute top-[15%] left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-emerald-500/35 to-transparent animate-float-data-1"></div>
-                {/* Line 2 - Horizontal Teal */}
-                <div class="absolute top-[45%] left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-teal-500/25 to-transparent animate-float-data-2"></div>
-                {/* Line 3 - Horizontal Lime */}
-                <div class="absolute top-[75%] left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-lime-500/30 to-transparent animate-float-data-1"></div>
-                {/* Line 4 - Vertical Emerald */}
-                <div class="absolute left-[25%] top-0 w-[1px] h-full bg-gradient-to-b from-transparent via-emerald-500/20 to-transparent animate-float-data-3"></div>
-                {/* Line 5 - Vertical Teal */}
-                <div class="absolute left-[75%] top-0 w-[1px] h-full bg-gradient-to-b from-transparent via-teal-500/25 to-transparent animate-float-data-4"></div>
+                {/* Sub KPI Row */}
+                <div className="w-full grid grid-cols-2 gap-2 border-t border-zinc-800/60 pt-4 mt-2 text-center text-xs font-mono">
+                  <div>
+                    <span className="text-zinc-400 block text-[10px]">ACEL_INSTANT</span>
+                    <span className={`font-bold ${currentAcceleration >= 2.0 ? 'text-amber-400' : currentAcceleration < -4.5 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                      {currentAcceleration.toFixed(2)} m/s²
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-zinc-400 block text-[10px]">MAX_VEL_TRACK</span>
+                    <span className="font-bold text-white">
+                      {(displayDoc?.metricas_basicas?.velocidad_maxima_kmh ?? 0.0).toFixed(1)} km/h
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 2: Score de Riesgo Global */}
+              <div className="rounded-none border border-zinc-800 bg-zinc-900/40 p-4 relative overflow-hidden transition-all duration-300 ease-in-out hover:border-amber-500/80 hover:shadow-[0_0_15px_rgba(245,158,11,0.15)]">
+                <div className="absolute top-3 left-4 flex items-center gap-1.5 text-xs text-zinc-400 font-mono">
+                  <Shield className="w-3.5 h-3.5 text-emerald-400" />
+                  SCORE_IA_PREDICTIVA
+                </div>
+
+                <div className="flex items-center gap-6 mt-4">
+                  {/* Anillo de riesgo */}
+                  <div className="relative w-24 h-24 flex items-center justify-center">
+                    <svg className="w-full h-full transform -rotate-90">
+                      <circle
+                        cx="48"
+                        cy="48"
+                        r="40"
+                        fill="none"
+                        stroke="#27272a"
+                        strokeWidth="8"
+                      />
+                      <circle
+                        cx="48"
+                        cy="48"
+                        r="40"
+                        fill="none"
+                        stroke={riskScore > 70.0 ? '#f43f5e' : riskScore > 30.0 ? '#fbbf24' : '#34d399'}
+                        strokeWidth="8"
+                        strokeDasharray={2 * Math.PI * 40}
+                        strokeDashoffset={2 * Math.PI * 40 - (riskScore / 100.0) * (2 * Math.PI * 40)}
+                        strokeLinecap="round"
+                        style={{
+                          transition: 'stroke-dashoffset 0.8s ease-out'
+                        }}
+                      />
+                    </svg>
+                    <div className="absolute text-center flex flex-col items-center">
+                      <span className="text-2xl font-extrabold text-white font-mono drop-shadow-[0_0_6px_rgba(255,255,255,0.25)]" style={{ transition: 'color 0.5s ease-out' }}>{riskScore.toFixed(0)}</span>
+                      <span className="text-[9px] text-zinc-400 font-mono font-semibold">SCORE</span>
+                    </div>
+                  </div>
+
+                  {/* Detalles del riesgo */}
+                  <div className="flex-1 space-y-2">
+                    <div className="rounded-none border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-mono tracking-wider text-amber-400 uppercase">
+                      RIESGO: {riskStatus}
+                    </div>
+                    <p className="text-[10px] text-zinc-400 font-mono">
+                      Viaje ID: {displayDoc.id_viaje}
+                    </p>
+                    <p className="text-[10px] text-zinc-400 font-mono">
+                      Varianza: {displayDoc.ia_predictiva.aceleracion_varianza_kmhs2.toFixed(1)} (km/h/s)²
+                    </p>
+                  </div>
+                </div>
+
+                {/* Desglose de Ponderaciones */}
+                <div className="mt-4 pt-4 border-t border-zinc-800/60 space-y-3 text-xs font-mono">
+                  <div className="flex justify-between items-center text-[10px] text-zinc-400 mb-1">
+                    <span>MATRIZ_PONDERACION</span>
+                    <span>PESO %</span>
+                  </div>
+                  <div className="space-y-3">
+                    {[
+                      { label: 'Varianza Aceleracion', field: 'varianza_acel' },
+                      { label: 'Excesos de Velocidad', field: 'exceso_velocidad' },
+                      { label: 'Frenadas Bruscas', field: 'frenadas_bruscas' }
+                    ].map(({ label, field }) => {
+                      const weight = displayDoc.ia_predictiva?.ponderaciones_matriz?.[field] ?? 0;
+                      return (
+                        <div key={field}>
+                          <div className="flex justify-between text-[10px] mb-1 text-slate-300">
+                            <span>{label}</span>
+                            <span>{(weight * 100).toFixed(0)}%</span>
+                          </div>
+                          <div className="flex gap-0.5 h-1.5 w-full bg-zinc-950 border border-zinc-900 p-0.5">
+                            {[...Array(10)].map((_, idx) => {
+                              const isFilled = idx < (weight * 10);
+                              return (
+                                <div 
+                                  key={idx} 
+                                  className={`h-full flex-1 rounded-none ${
+                                    isFilled 
+                                      ? (label.includes('Frenadas') ? 'bg-red-500/80' : label.includes('Excesos') ? 'bg-amber-500/80' : 'bg-emerald-500/80') 
+                                      : 'bg-zinc-800/30'
+                                  }`}
+                                />
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
             </div>
 
-            {/* 1. SIDEBAR DE ARQUITECTURA */}
-            <aside class="w-80 bg-slate-950/40 border-r border-slate-900/30 p-6 flex flex-col justify-between shrink-0 h-full overflow-y-auto backdrop-blur-md z-10">
-                <div class="space-y-6">
-                    {/* Logo */}
-                    <div class="flex items-center space-x-3">
-                        <div class="p-1.5 rounded-lg bg-slate-900/50 border border-slate-800 shadow-sm shrink-0">
-                            <svg class="w-5 h-5 text-emerald-400 transition-all duration-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z" />
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 011-1v-4h4.182a1 1 0 01.778.368l2.678 3.346a1 1 0 01.162.586V16a1 1 0 01-1 1h-1m-4-1a1 1 0 011-1h2" />
-                            </svg>
-                        </div>
-                        <div>
-                            <h1 class="font-extrabold text-lg tracking-tight text-white">SmartFleet Pro</h1>
-                            <p class="text-xs text-slate-400 font-medium">Decoupled UI v2.0.0</p>
-                        </div>
-                    </div>
+            {/* Columna Derecha: Graficos de Analitica */}
+            <div className="lg:col-span-2 space-y-6">
+              
+              {/* Tarjetas Rapidas de Estadisticas */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="rounded-none border border-zinc-800/60 bg-zinc-900/40 backdrop-blur-sm p-4 transition-all duration-300 ease-in-out hover:border-cyan-500/80 hover:shadow-[0_0_15px_rgba(6,182,212,0.15)]">
+                  <span className="text-[10px] font-semibold tracking-widest text-zinc-500 uppercase block">TOTAL_MUESTRAS</span>
+                  <span className="text-3xl font-bold font-mono tracking-tighter text-zinc-100 block mt-1 drop-shadow-[0_0_4px_rgba(255,255,255,0.15)] transition-all duration-500">
+                    {displayDoc?.metricas_basicas?.total_muestras ?? 0}
+                  </span>
+                </div>
+                <div className="rounded-none border border-zinc-800/60 bg-zinc-900/40 backdrop-blur-sm p-4 transition-all duration-300 ease-in-out hover:border-cyan-500/80 hover:shadow-[0_0_15px_rgba(6,182,212,0.15)]">
+                  <span className="text-[10px] font-semibold tracking-widest text-zinc-500 uppercase block">VEL_PROMEDIO</span>
+                  <span className="text-3xl font-bold font-mono tracking-tighter text-zinc-100 block mt-1 drop-shadow-[0_0_4px_rgba(255,255,255,0.15)] transition-all duration-500">
+                    {(displayDoc?.metricas_basicas?.velocidad_promedio_kmh ?? 0.0).toFixed(1)}
+                    <span className="text-xs font-normal text-zinc-500 ml-1">km/h</span>
+                  </span>
+                </div>
+                <div className="rounded-none border border-zinc-800/60 bg-zinc-900/40 backdrop-blur-sm p-4 transition-all duration-300 ease-in-out hover:border-cyan-500/80 hover:shadow-[0_0_15px_rgba(6,182,212,0.15)]">
+                  <span className="text-[10px] font-semibold tracking-widest text-zinc-500 uppercase block">EXCESOS_VEL</span>
+                  <span className={`text-3xl font-bold font-mono tracking-tighter block mt-1 drop-shadow-[0_0_4px_rgba(255,255,255,0.15)] transition-all duration-500 ${(displayDoc?.metricas_basicas?.alertas_exceso_velocidad ?? 0) > 0 ? 'text-rose-400' : 'text-zinc-100'}`}>
+                    {displayDoc?.metricas_basicas?.alertas_exceso_velocidad ?? 0}
+                  </span>
+                </div>
+                <div className="rounded-none border border-zinc-800/60 bg-zinc-900/40 backdrop-blur-sm p-4 transition-all duration-300 ease-in-out hover:border-cyan-500/80 hover:shadow-[0_0_15px_rgba(6,182,212,0.15)]">
+                  <span className="text-[10px] font-semibold tracking-widest text-zinc-500 uppercase block">FRENADAS_BRUSCAS</span>
+                  <span className={`text-3xl font-bold font-mono tracking-tighter block mt-1 drop-shadow-[0_0_4px_rgba(255,255,255,0.15)] transition-all duration-500 ${(displayDoc?.ia_predictiva?.frenadas_bruscas_count ?? 0) > 0 ? 'text-amber-400' : 'text-zinc-100'}`}>
+                    {displayDoc?.ia_predictiva?.frenadas_bruscas_count ?? 0}
+                  </span>
+                </div>
+              </div>
+
+              {/* Grafico 1: Serie Temporal de Velocidad y Aceleracion */}
+              <div className="bg-transparent backdrop-blur-none rounded-none border border-zinc-800/60 p-4 relative transition-all duration-300 ease-in-out hover:border-emerald-500/80 hover:shadow-[0_0_15px_rgba(16,185,129,0.15)]">
+                <div className="flex justify-between items-center mb-4 font-mono text-xs text-zinc-400">
+                  <div className="flex items-center gap-1.5">
+                    <Activity className="w-3.5 h-3.5 text-emerald-400" />
+                    SERIE_TEMPORAL_VELOCIDAD_ACELERACION
+                  </div>
+                  <span>ID_VIAJE: {displayDoc.id_viaje}</span>
+                </div>
+  
+                <div className="h-64 bg-transparent">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={chartData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }} className="bg-transparent">
+                      <defs>
+                        <linearGradient id="colorVel" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#10b981" stopOpacity={0.03}/>
+                          <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                        </linearGradient>
+                        <linearGradient id="colorAcel" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.03}/>
+                          <stop offset="95%" stopColor="#f43f5e" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid stroke="#27272a" strokeDasharray="1 6" vertical={false} />
+                      <XAxis dataKey="name" stroke="#71717a" fontSize={9} tickLine={false} />
+                      <YAxis yAxisId="left" stroke="#10b981" fontSize={9} tickLine={false} label={{ value: 'km/h', angle: -90, position: 'insideLeft', offset: 10, fill: '#71717a' }} />
+                      <YAxis yAxisId="right" orientation="right" stroke="#f43f5e" fontSize={9} tickLine={false} label={{ value: 'm/s²', angle: 90, position: 'insideRight', offset: 10, fill: '#71717a' }} />
+                      <Tooltip
+                        contentStyle={{ backgroundColor: '#09090b', borderColor: '#27272a', borderRadius: '0px' }}
+                        labelStyle={{ color: '#a1a1aa', fontFamily: 'monospace', fontSize: '10px' }}
+                        itemStyle={{ color: '#fff', fontFamily: 'monospace', fontSize: '12px' }}
+                      />
+                      <Area yAxisId="left" type="monotone" dataKey="velocidad" stroke="#10b981" strokeWidth={1.5} dot={false} activeDot={{ r: 4, strokeWidth: 0 }} fillOpacity={1} fill="url(#colorVel)" name="Velocidad (km/h)" />
+                      <Area yAxisId="right" type="monotone" dataKey="aceleracion" stroke="#f43f5e" strokeWidth={1.5} dot={false} activeDot={{ r: 4, strokeWidth: 0 }} fillOpacity={1} fill="url(#colorAcel)" name="Aceleracion (m/s²)" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+                          {/* Grafico 2: Componentes de Riesgo y Pesos */}
+              <div className="bg-transparent backdrop-blur-none rounded-none border border-zinc-800/60 p-4 transition-all duration-300 ease-in-out hover:border-cyan-500/80 hover:shadow-[0_0_15px_rgba(6,182,212,0.15)]">
+                <div className="flex items-center gap-1.5 mb-4 font-mono text-xs text-zinc-400">
+                  <MapPin className="w-3.5 h-3.5 text-emerald-400" />
+                  LOGISTICA_TRACKING_GEO
+                </div>
+  
+                <div className="h-[340px] w-full bg-transparent rounded-none border border-zinc-800/60 mt-2 relative overflow-hidden">
+                  <MapContainer 
+                    center={[lat, lng]} 
+                    zoom={14} 
+                    style={{ height: '100%', width: '100%', background: '#09090b' }}
+                    zoomControl={false}
+                    attributionControl={false}
+                  >
+                    {/* Capa de Azulejos Oscuros de Precisión */}
+                    <TileLayer
+                      url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+                      attribution='&copy; <a href="https://carto.com/">CARTO</a>'
+                    />
                     
-                    <hr class="border-slate-900/40" />
+                    {/* Trazado de la trayectoria recorrida del viaje */}
+                    {historialRuta.length > 0 && (
+                      <Polyline 
+                        positions={historialRuta} 
+                        pathOptions={{ color: '#06b6d4', weight: 2, opacity: 0.8, dashArray: '4, 4' }} 
+                      />
+                    )}
 
-                    {/* Estado de la API */}
-                    <div>
-                        <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Conectividad</h2>
-                        <div class={`flex items-center space-x-3 rounded-lg border p-3 ${apiConnected ? 'bg-emerald-500/5 border-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.2)]' : 'bg-rose-500/5 border-rose-500/20'}`}>
-                            <span class="relative flex h-3.5 w-3.5">
-                                {apiConnected && <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>}
-                                <span class={`relative inline-flex rounded-full h-3.5 w-3.5 ${apiConnected ? 'bg-emerald-500 animate-pulse-fast' : 'bg-rose-500'}`}></span>
-                            </span>
-                            <div>
-                                <div class="text-sm font-bold text-slate-200">{apiConnected ? 'API Conectada' : 'API Desconectada'}</div>
-                                <div class="text-xs text-slate-400 font-mono">http://localhost:8000</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Especificaciones Técnicas */}
-                    <div>
-                        <div class="flex items-center space-x-2 mb-2">
-                            <div class="p-1.5 rounded-lg bg-slate-900/50 border border-slate-800 shadow-sm shrink-0">
-                                <svg class="w-4 h-4 text-slate-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                                </svg>
-                            </div>
-                            <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Architecture Spec</h2>
-                        </div>
-                        <pre class="bg-slate-950/80 border border-slate-900/30 rounded-lg p-3 text-[10.5px] text-slate-300 font-mono leading-relaxed overflow-x-auto whitespace-pre-wrap select-all">
-{`[Pipeline Engine]
-- PySpark 3.5 (JVM)
-- Cassandra Temporal
-- MongoDB Documental
-- Postgres Bitácora ACID
-
-[Mathematical Core]
-Teorema Koenig-Huygens:
-Var(X) = E[X²] - (E[X])²
-Double Precision Casting
-
-[Design Patterns]
-- Clean Architecture
-- SOLID (DI + Repository)
-- 12-Factor App Config`}
-                        </pre>
-                    </div>
+                    {/* Marcador vectorial de la posición en tiempo real */}
+                    <Marker position={[lat, lng]} />
+                  </MapContainer>
                 </div>
+              </div>
 
-                {/* Footer */}
-                <div class="text-[10px] text-slate-400 font-medium tracking-tight">
-                    SmartFleet Pro v2.0.0 | Developed by Juan José Parra
-                </div>
-            </aside>
+            </div>
 
-            {/* MAIN CONTENT AREA WITH 3D PERSPECTIVE */}
-            <main class="flex-1 h-screen flex flex-col overflow-hidden p-8" style={{ perspective: "1200px" }}>
-                {/* Header Hero (Static at the top) */}
-                <header class="shrink-0 mb-6 bg-slate-950/80 backdrop-blur-md border border-white/10 shadow-[inset_0_0_15px_rgba(255,255,255,0.03)] rounded-2xl p-6 overflow-hidden glow-card glow-emerald">
-                    <div class="absolute right-0 top-0 w-80 h-80 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none"></div>
-                    <div class="flex items-center space-x-2 text-xs font-semibold text-emerald-400 tracking-wider uppercase mb-1">
-                        <span class="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                        <span>Reactivo Dashboard</span>
+          </div>
+
+          {/* Marquesinas Animadas / Tickers */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+            
+            {/* Ticker 1: Fisica y Telemetria Reciente */}
+            <div className="h-48 overflow-y-auto bg-black/10 backdrop-blur-[1px] rounded-none border border-zinc-800/60 p-3 font-mono text-xs transition-all duration-300 ease-in-out hover:border-amber-500/80 hover:shadow-[0_0_15px_rgba(245,158,11,0.15)]">
+              <span className="text-[11px] text-zinc-500 font-bold tracking-normal border-b border-zinc-800 pb-1 mb-2 block">
+                root@smartfleet:~# telemetry.log
+              </span>
+              <div className="space-y-1">
+                {points.slice().reverse().map((p, idx) => {
+                  const timeVal = p?.tiempo ?? "N/A"
+                  const velVal = typeof p?.velocidad === 'number' ? p.velocidad : 0.0
+                  const acelVal = typeof p?.aceleracion === 'number' ? p.aceleracion : 0.0
+                  const isNew = idx === 0
+                  return (
+                    <div
+                      key={`phys-tick-${idx}`}
+                      className="flex items-center gap-1"
+                      style={isNew ? { animation: 'fadeInLog 0.2s ease-out' } : {}}
+                    >
+                      <span className="text-zinc-500">[{timeVal}]</span>
+                      <span className={`font-mono ${ isNew ? 'text-emerald-400 drop-shadow-[0_0_2px_rgba(16,185,129,0.35)]' : 'text-emerald-500/70' }`}>
+                        [OK] VEL: {velVal.toFixed(1)} km/h | ACEL: {acelVal.toFixed(2)} m/s²
+                      </span>
                     </div>
-                    <h2 class="text-2xl font-extrabold text-slate-100 tracking-tight mb-2">Centro de Inteligencia de Flota</h2>
-                    <p class="text-sm text-slate-400 max-w-xl font-normal leading-relaxed">
-                        Ingestión políglota distribuida a gran escala. Exposición REST desacoplada consumida en caliente mediante React hooks.
-                    </p>
-                </header>
+                  )
+                })}
+              </div>
+            </div>
 
-                {/* Scrollable Content Area */}
-                <div class="flex-1 overflow-y-auto pr-1 space-y-6">
-                    {/* Fila de Controles Interactivos (Filtros - Primer elemento en scroll) */}
-                    <div class="flex flex-wrap items-center justify-between gap-4 p-4 rounded-xl border border-white/10 bg-slate-950/80 backdrop-blur-md glow-card relative z-30">
-                        <div class="flex flex-wrap items-center gap-4">
-                            {/* Selector de Flota/Vehículo */}
-                            <CustomDropdown 
-                                label="Selección Activa"
-                                options={[
-                                    { value: "all", label: "Flota Completa (Zona Norte)" },
-                                    { value: "v1", label: "Vehículo 101 - Volvo FMX" },
-                                    { value: "v2", label: "Vehículo 102 - Scania R450" },
-                                    { value: "v3", label: "Vehículo 103 - Mercedes Actros" }
-                                ]}
-                                value={selectedFleet}
-                                onChange={setSelectedFleet}
-                            />
+            {/* Ticker 2: Auditoria y Arquitectura de Pipeline */}
+            <div className="h-48 overflow-y-auto bg-black/10 backdrop-blur-[1px] rounded-none border border-zinc-800/60 p-3 font-mono text-xs transition-all duration-300 ease-in-out hover:border-amber-500/80 hover:shadow-[0_0_15px_rgba(245,158,11,0.15)]">
+              <span className="text-[11px] text-zinc-500 font-bold tracking-normal border-b border-zinc-800 pb-1 mb-2 block">
+                root@smartfleet:~# pipeline_audit.log
+              </span>
+              <div className="space-y-1">
+                {[
+                  { label: 'MOTOR_PROCESAMIENTO', value: displayDoc?.arquitectura?.motor_procesamiento },
+                  { label: 'PATRON_ETL',           value: displayDoc?.arquitectura?.patron_etl },
+                  { label: 'ALGORITMO_VARIANZA',   value: displayDoc?.arquitectura?.algoritmo_varianza },
+                  { label: 'PATRON_PERSISTENCIA',  value: displayDoc?.arquitectura?.patron_persistencia },
+                  { label: 'PRINCIPIOS',           value: displayDoc?.arquitectura?.principios },
+                ].map(({ label, value }, idx) => (
+                  <div
+                    key={label}
+                    className="flex items-center gap-1"
+                    style={idx === 0 ? { animation: 'fadeInLog 0.2s ease-out' } : {}}
+                  >
+                    <span className="text-zinc-500">[{displayDoc?.timestamp_procesamiento ?? "N/A"}]</span>
+                    <span className={`font-mono ${ idx === 0 ? 'text-emerald-400 drop-shadow-[0_0_2px_rgba(16,185,129,0.35)]' : 'text-emerald-500/70' }`}>
+                      [INFO] {label}: {value ?? "N/A"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
 
-                            {/* Rango de fechas / Selector de Tiempo */}
-                            <CustomDropdown 
-                                label="Período de Análisis"
-                                options={[
-                                    { value: "24h", label: "Últimas 24 horas" },
-                                    { value: "7d", label: "Últimos 7 días" },
-                                    { value: "30d", label: "Últimos 30 días" }
-                                ]}
-                                value={selectedPeriod}
-                                onChange={setSelectedPeriod}
-                            />
-                        </div>
+          </div>
 
-                        {/* Botón de Exportar Datos */}
-                        <button class="bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 hover:border-emerald-500/50 rounded-lg px-4 py-2 text-xs text-emerald-400 hover:text-emerald-300 font-bold flex items-center space-x-2 transition-all duration-300 shadow-[0_0_15px_rgba(16,185,129,0.1)] hover:shadow-[0_0_20px_rgba(16,185,129,0.2)] md:mt-0 mt-2">
-                            <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                            </svg>
-                            <span>Exportar Datos</span>
-                        </button>
-                    </div>
-
-                {/* SKELETON LOADER / ERROR STATES */}
-                {loading && !data ? (
-                    <div class="space-y-6 animate-pulse animate-fade-in mt-8">
-                        {/* Hero Card Skeleton */}
-                        <div class="h-44 bg-slate-950/60 border border-white/10 shadow-[inset_0_0_15px_rgba(255,255,255,0.03)] rounded-2xl flex items-center p-6 space-x-6">
-                            <div class="w-20 h-20 rounded-full bg-slate-950 border border-emerald-500/10 animate-pulse shrink-0"></div>
-                            <div class="flex-1 space-y-3">
-                                <div class="h-4 bg-slate-950 rounded w-1/4"></div>
-                                <div class="h-3 bg-slate-950 rounded w-3/4"></div>
-                                <div class="h-3 bg-slate-950 rounded w-1/2"></div>
-                            </div>
-                        </div>
-                        {/* KPIs Grid Skeleton */}
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            <div class="h-28 bg-slate-950/60 border border-white/10 shadow-[inset_0_0_15px_rgba(255,255,255,0.03)] p-5 space-y-3">
-                                <div class="h-3 bg-slate-950 rounded w-2/3"></div>
-                                <div class="h-6 bg-slate-950 rounded w-1/3"></div>
-                                <div class="h-3 bg-slate-950 rounded w-1/2"></div>
-                            </div>
-                            <div class="h-28 bg-slate-950/60 border border-white/10 shadow-[inset_0_0_15px_rgba(255,255,255,0.03)] p-5 space-y-3">
-                                <div class="h-3 bg-slate-950 rounded w-2/3"></div>
-                                <div class="h-6 bg-slate-950 rounded w-1/3"></div>
-                                <div class="h-3 bg-slate-950 rounded w-1/2"></div>
-                            </div>
-                            <div class="h-28 bg-slate-950/60 border border-white/10 shadow-[inset_0_0_15px_rgba(255,255,255,0.03)] p-5 space-y-3">
-                                <div class="h-3 bg-slate-950 rounded w-2/3"></div>
-                                <div class="h-6 bg-slate-950 rounded w-1/3"></div>
-                                <div class="h-3 bg-slate-950 rounded w-1/2"></div>
-                            </div>
-                        </div>
-                    </div>
-                ) : error ? (
-                    <div class="bg-rose-500/10 border border-rose-500/20 rounded-xl p-6 text-center space-y-3 max-w-md mx-auto my-12 shadow-xl animate-fade-in mt-8">
-                        <div class="flex justify-center">
-                            <div class="p-1.5 rounded-lg bg-slate-900/50 border border-slate-800 shadow-sm">
-                                <svg class="w-6 h-6 text-rose-500 transition-all duration-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                                </svg>
-                            </div>
-                        </div>
-                        <h3 class="text-lg font-bold text-slate-200">Fallo de Comunicación NoSQL</h3>
-                        <p class="text-sm text-slate-400 leading-relaxed font-mono">
-                            {error}. Compruebe que el servicio API de FastAPI esté levantado con <code>python app_api.py</code> en el puerto 8000.
-                        </p>
-                        <button onClick={() => fetchData(true)} class="mt-2 bg-slate-900 border border-slate-800 hover:bg-slate-850 px-4 py-2 rounded-lg text-xs font-semibold transition">
-                            Reintentar conexión
-                        </button>
-                    </div>
-                ) : (
-                    <div class={`space-y-6 transition-opacity duration-1000 ease-in-out ${animateIn ? 'opacity-100' : 'opacity-0'} mt-8`}>
-                        {/* 4. PANEL HERO DE IA (Card 1: Global Risk Score - Esmeralda) */}
-                        <section class={`relative border border-white/10 shadow-[inset_0_0_15px_rgba(255,255,255,0.03)] rounded-2xl p-6 overflow-hidden bg-slate-950/80 backdrop-blur-md glow-card glow-emerald ${risk.border}`}>
-                            <div class="flex items-center justify-between mb-4">
-                                <div>
-                                    <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">Analytics Engine v2.0</span>
-                                    <h3 class="text-lg font-extrabold text-slate-200">Global Risk Score · IA</h3>
-                                </div>
-                                <div class={`px-3 py-1 rounded-full text-xs font-bold ${risk.bg} ${risk.color}`}>
-                                    Nivel: {risk.label}
-                                </div>
-                            </div>
-                            
-                            <div class="flex items-center space-x-6">
-                                {/* Progress Ring */}
-                                <div class="relative shrink-0 flex items-center justify-center">
-                                    <svg class="w-24 h-24 transform -rotate-90">
-                                        <defs>
-                                            <linearGradient id="risk-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                                                <stop offset="0%" stop-color="#34d399" />
-                                                <stop offset="100%" stop-color="#047857" />
-                                            </linearGradient>
-                                        </defs>
-                                        <circle cx="48" cy="48" r="40" stroke="rgba(30, 41, 59, 0.3)" stroke-width="8" fill="transparent" />
-                                        <circle cx="48" cy="48" r="40" stroke-width="8" fill="transparent"
-                                            stroke="url(#risk-gradient)"
-                                            class="ring-progress"
-                                            stroke-dasharray={`${2 * Math.PI * 40}`}
-                                            stroke-dashoffset={dashOffset}
-                                        />
-                                    </svg>
-                                    <div class="absolute text-xl font-black text-slate-100"><AnimatedNumber value={data.ia_predictiva.score_riesgo_global} suffix="%" /></div>
-                                </div>
-
-                                <div class="flex-1 space-y-2">
-                                    <div class="flex justify-between text-xs font-bold">
-                                        <span class="text-slate-400">Puntaje General de Riesgo</span>
-                                        <span class={risk.color}>{data.ia_predictiva.score_riesgo_global} / 100</span>
-                                    </div>
-                                    <div class="w-full bg-slate-900/60 rounded-full h-3 overflow-hidden border border-slate-800/20">
-                                        <div class={`h-full rounded-full transition-all duration-1000 ease-out ${
-                                            data.ia_predictiva.score_riesgo_global <= 30 ? 'bg-emerald-500' :
-                                            data.ia_predictiva.score_riesgo_global <= 65 ? 'bg-amber-500' : 'bg-rose-500'
-                                        }`} style={{ width: `${data.ia_predictiva.score_riesgo_global}%` }}></div>
-                                    </div>
-                                    <p class="text-xs text-slate-400 leading-relaxed font-normal">
-                                        Comportamiento calibrado ponderando excesos de velocidad ({data.ia_predictiva.ponderaciones_matriz.exceso_velocidad * 100}%), varianza de aceleración ({data.ia_predictiva.ponderaciones_matriz.varianza_acel * 100}%) y frenadas bruscas ({data.ia_predictiva.ponderaciones_matriz.frenadas_bruscas * 100}%).
-                                    </p>
-                                </div>
-                            </div>
-                        </section>
-
-                        {/* 3. TARJETAS KPI GRID (3 columnas) */}
-                        <section class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                            {/* Card 2: Muestras GPS - Verde Eléctrico */}
-                            <div class="bg-slate-950/80 backdrop-blur-md border border-white/10 shadow-[inset_0_0_15px_rgba(255,255,255,0.03)] rounded-xl p-5 relative group glow-card glow-green">
-                                <div class="flex items-center justify-between mb-2">
-                                    <span class="text-sm font-semibold text-slate-400">Muestras GPS Procesadas</span>
-                                    <div class="bg-green-500/10 p-2 rounded-xl border border-green-500/30 shadow-[0_0_15px_rgba(74,222,128,0.2)]">
-                                        <svg class="w-5 h-5 text-green-400 transition-all duration-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                                            <path stroke-linecap="round" stroke-linejoin="round" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
-                                        </svg>
-                                    </div>
-                                </div>
-                                <div class="text-2xl font-black text-slate-100 mb-1">
-                                    <AnimatedNumber value={data.metricas_basicas.total_muestras} /> <span class="text-xs text-slate-400 font-medium">pts</span>
-                                </div>
-                                <div class="text-[11px] text-emerald-400 font-bold px-2 py-0.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 inline-flex items-center w-fit">
-                                    Data Lake Cassandra
-                                </div>
-                            </div>
-
-                            {/* Card 3: Velocidad Promedio - Teal Menta */}
-                            <div class="bg-slate-950/80 backdrop-blur-md border border-white/10 shadow-[inset_0_0_15px_rgba(255,255,255,0.03)] rounded-xl p-5 relative group glow-card glow-teal">
-                                <div class="flex items-center justify-between mb-2">
-                                    <span class="text-sm font-semibold text-slate-400">Velocidad Promedio</span>
-                                    <div class="bg-teal-500/10 p-2 rounded-xl border border-teal-500/30 shadow-[0_0_15px_rgba(45,212,191,0.2)]">
-                                        <svg class="w-5 h-5 text-teal-400 transition-all duration-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                                            <path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646m.354 5.656V4.5m4.5 4.5l3-3m-3 3h4.5" />
-                                        </svg>
-                                    </div>
-                                </div>
-                                <div class="text-2xl font-black text-slate-100 mb-1">
-                                    <AnimatedNumber value={data.metricas_basicas.velocidad_promedio_kmh} /> <span class="text-xs text-slate-400 font-medium">km/h</span>
-                                </div>
-                                <div class={`text-[11px] font-bold px-2 py-0.5 rounded-full border inline-flex items-center w-fit ${
-                                    data.metricas_basicas.velocidad_promedio_kmh <= data.metricas_basicas.umbral_velocidad_kmh 
-                                    ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' 
-                                    : 'text-rose-400 bg-rose-500/10 border-rose-500/20'
-                                }`}>
-                                    {data.metricas_basicas.velocidad_promedio_kmh <= data.metricas_basicas.umbral_velocidad_kmh 
-                                        ? 'Dentro de límites' : 'Límite excedido'}
-                                </div>
-                            </div>
-
-                            {/* Card 4: Frenadas Bruscas - Lima Reactivo */}
-                            <div class="bg-slate-950/80 backdrop-blur-md border border-white/10 shadow-[inset_0_0_15px_rgba(255,255,255,0.03)] rounded-xl p-5 relative group glow-card glow-lime">
-                                <div class="flex items-center justify-between mb-2">
-                                    <span class="text-sm font-semibold text-slate-400">Frenadas Bruscas</span>
-                                    <div class={
-                                        data.ia_predictiva.frenadas_bruscas_count === 0 
-                                        ? "bg-lime-500/10 p-2 rounded-xl border border-lime-500/30 shadow-[0_0_15px_rgba(163,230,53,0.2)]"
-                                        : "bg-red-950/40 p-2 rounded-xl border border-red-700/50 shadow-[0_0_15px_rgba(239,68,68,0.2)]"
-                                    }>
-                                        <svg class={`w-5 h-5 transition-all duration-300 ${
-                                            data.ia_predictiva.frenadas_bruscas_count === 0 ? 'text-lime-400' : 'text-red-400'
-                                        }`} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                                        </svg>
-                                    </div>
-                                </div>
-                                <div class="text-2xl font-black text-slate-100 mb-1">
-                                    <AnimatedNumber value={data.ia_predictiva.frenadas_bruscas_count} /> <span class="text-xs text-slate-400 font-medium">eventos</span>
-                                </div>
-                                <div class={`text-[11px] font-bold px-2 py-0.5 rounded-full border inline-flex items-center w-fit ${
-                                    data.ia_predictiva.frenadas_bruscas_count === 0 
-                                    ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' 
-                                    : 'text-rose-400 bg-red-950/40 border-red-700/50'
-                                }`}>
-                                    {data.ia_predictiva.frenadas_bruscas_count === 0 
-                                        ? 'Conducción estable' : `${data.ia_predictiva.frenadas_bruscas_count} frenados extremos`}
-                                </div>
-                            </div>
-                        </section>
-
-                         {/* Métricas Secundarias */}
-                         <section class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-                             <div class="bg-slate-950/80 backdrop-blur-md border border-white/10 shadow-[inset_0_0_15px_rgba(255,255,255,0.03)] rounded-xl p-5 glow-card glow-malaquita">
-                                 <h4 class="text-xs font-bold text-slate-400 uppercase mb-3 tracking-wider">Detalle Estadístico Físico</h4>
-                                 <div class="space-y-2 font-mono text-xs text-slate-400 mt-4">
-                                     <div class="flex justify-between py-2 border-b border-slate-900/20">
-                                         <span class="text-slate-500 font-medium">Aceleración Varianza:</span>
-                                         <span class="font-bold text-emerald-400/90">{data.ia_predictiva.aceleracion_varianza_kmhs2} (m/s²)²</span>
-                                     </div>
-                                     <div class="flex justify-between py-2 border-b border-slate-900/20">
-                                         <span class="text-slate-500 font-medium">Velocidad Máxima:</span>
-                                         <span class="font-bold text-slate-200">{data.metricas_basicas.velocidad_maxima_kmh} km/h</span>
-                                     </div>
-                                     <div class="flex justify-between py-2 border-b border-slate-900/20">
-                                         <span class="text-slate-500 font-medium">Alertas Exceso Velocidad:</span>
-                                         <span class="font-bold text-slate-200">{data.metricas_basicas.alertas_exceso_velocidad} eventos</span>
-                                     </div>
-                                 </div>
-                             </div>
-                             <div class="bg-slate-950/80 backdrop-blur-md border border-white/10 shadow-[inset_0_0_15px_rgba(255,255,255,0.03)] rounded-xl p-5 glow-card glow-menta">
-                                 <h4 class="text-xs font-bold text-slate-400 uppercase mb-3 tracking-wider">Trazabilidad del Pipeline</h4>
-                                 <div class="space-y-2 font-mono text-xs text-slate-400 mt-4">
-                                     <div class="flex justify-between py-2 border-b border-slate-900/20">
-                                         <span class="text-slate-500 font-medium">Motor de Cómputo:</span>
-                                         <span class="font-bold text-teal-400/90">{data.arquitectura.motor_procesamiento}</span>
-                                     </div>
-                                     <div class="flex justify-between py-2 border-b border-slate-900/20">
-                                         <span class="text-slate-500 font-medium">Patrón ETL:</span>
-                                         <span class="font-bold text-slate-200">{data.arquitectura.patron_etl}</span>
-                                     </div>
-                                     <div class="flex justify-between py-2 border-b border-slate-900/20">
-                                         <span class="text-slate-500 font-medium">Fecha Análisis:</span>
-                                         <span class="font-bold text-slate-200">{new Date(data.fecha_analisis).toLocaleString()}</span>
-                                     </div>
-                                 </div>
-                             </div>
-                         </section>
-                    </div>
-                )}
-                </div>
-            </main>
         </div>
-    );
+      )}
+    </div>
+  )
 }
-
-const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(<App />);

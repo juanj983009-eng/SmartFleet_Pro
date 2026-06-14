@@ -35,25 +35,33 @@ services:
     depends_on:
       mongo_fleet:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/fleet/analytics')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     networks:
       - fleet_network
 
-  # Capa de Presentación (Frontend React + Tailwind CSS)
   app_frontend:
-    build: .
+    build:
+      context: ./src/frontend
+      dockerfile: Dockerfile
     container_name: streamlit_fleet_frontend
-    working_dir: /app/src/frontend
-    command: python -m http.server 8501 --bind 0.0.0.0
     ports:
       - "8501:8501"
-    env_file:
-      - .env
+    environment:
+      - NODE_ENV=development
     volumes:
-      - .:/app
+      - ./src/frontend:/app
+      - /app/node_modules
     depends_on:
-      - app_api
+      app_api:
+        condition: service_healthy
     networks:
       - fleet_network
+    restart: always
 
   # Ingesta masiva y series temporales (NoSQL Columnar)
   cassandra_fleet:
@@ -72,6 +80,8 @@ services:
   mongo_fleet:
     image: mongo:6.0
     container_name: mongo_fleet
+    hostname: mongo_fleet
+    command: mongod --replSet rs0 --keyFile /data/db/mongodb.key --bind_ip_all
     ports:
       - "27017:27017"
     environment:
@@ -80,13 +90,14 @@ services:
     volumes:
       - mongo_data:/data/db
     healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      test: ["CMD", "mongosh", "-u", "${MONGO_USER}", "-p", "${MONGO_PASS}", "--authenticationDatabase", "admin", "--eval", "db.adminCommand('ping')"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 20s
     networks:
       - fleet_network
+
 
   # Seguridad y auditoría (SQL Relacional)
   postgres_fleet:

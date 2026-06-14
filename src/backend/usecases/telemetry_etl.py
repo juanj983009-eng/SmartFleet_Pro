@@ -62,15 +62,18 @@ class TelemetryETLUseCase:
             )
 
             # Performance Optimization: Repartition by partition key to minimize shuffle stages
-            # aligned with Window partitionBy and subsequent groupBy in the Predictive Engine
             df_repartitioned = df_filtered.repartition("id_viaje")
 
-            window_spec = Window.partitionBy("id_viaje").orderBy("tiempo")
+            window_spec_base = Window.partitionBy("id_viaje").orderBy("tiempo")
+            window_spec = (
+                window_spec_base
+                .rowsBetween(-10, 0)
+            )
 
             df_transformed = (
                 df_repartitioned
-                .withColumn("v_anterior", F.lag("velocidad_kmh", 1).over(window_spec).cast("double"))
-                .withColumn("t_anterior", F.lag("tiempo", 1).over(window_spec))
+                .withColumn("v_anterior", F.lag("velocidad_kmh", 1).over(window_spec_base).cast("double"))
+                .withColumn("t_anterior", F.lag("tiempo", 1).over(window_spec_base))
                 # Convert velocity delta from km/h to SI units (m/s) with double precision
                 .withColumn(
                     "delta_v", 
@@ -97,54 +100,75 @@ class TelemetryETLUseCase:
             # LOAD: Persist execution logs in PostgreSQL and aggregated reports in MongoDB
             # Relational logging of ETL execution metadata via JDBC in PostgreSQL
             logger.info("[LOAD] Persistiendo logs analíticos consolidados en PostgreSQL...")
-            self._postgres_repo.log_execution_sync(df_scored.drop("total_muestras"), table_name="audit_execution_logs")
+            self._postgres_repo.log_execution_sync(
+                df_scored.drop("total_muestras", "ultimo_latitud", "ultimo_longitud", "puntos_telemetria"),
+                table_name="audit_execution_logs"
+            )
 
             # Document-oriented storage of hierarchically aggregated analytics report in MongoDB
             logger.info("[LOAD] Persistiendo reportes estructurados en MongoDB Atlas...")
-            # Collect records to driver memory to format raw Spark rows into MongoDB BSON documents
-            rows = df_scored.collect()
-            flat_data = [row.asDict(recursive=True) for row in rows]
-            
-            nested_data = []
-            for item in flat_data:
-                nested_doc = {
-                    "proyecto": "SmartFleet_Pro",
-                    "version_pipeline": "2.0.0",
-                    "id_viaje": item.get("id_viaje"),
-                    "fecha_analisis": datetime.now(timezone.utc),
-                    
-                    "metricas_basicas": {
-                        "total_muestras": int(item.get("total_muestras", 0)),
-                        "velocidad_promedio_kmh": round(float(item.get("velocidad_promedio_kmh", 0.0)), 2),
-                        "velocidad_maxima_kmh": round(float(item.get("velocidad_maxima_kmh", 0.0)), 2),
-                        "alertas_exceso_velocidad": int(item.get("alertas_exceso_velocidad", 0)),
-                        "umbral_velocidad_kmh": TelemetryConstants.SPEED_LIMIT_KMH,
-                    },
-                    
-                    "ia_predictiva": {
-                        "aceleracion_varianza_kmhs2": round(float(item.get("aceleracion_varianza", 0.0)), 2),
-                        "frenadas_bruscas_count": int(item.get("frenadas_bruscas_count", 0)),
-                        "umbral_frenado_kmhs": -4.5,
-                        "score_riesgo_global": round(float(item.get("score_riesgo_global", 0.0)), 2),
-                        "ponderaciones_matriz": {
-                            "exceso_velocidad": RiskScoreWeights.SPEEDING_WEIGHT,
-                            "varianza_acel": RiskScoreWeights.VARIANCE_WEIGHT,
-                            "frenadas_bruscas": RiskScoreWeights.HARD_BRAKING_WEIGHT,
-                        }
-                    },
-                    
-                    "arquitectura": {
-                        "motor_procesamiento": f"PySpark {self._spark.version} (JVM Native)",
-                        "patron_etl": "Window Functions — Partitioned by id_viaje",
-                        "algoritmo_varianza": "Fórmula de Koenig-Huygens: E[X²] - (E[X])²",
-                        "patron_persistencia": "Repository Pattern (PyMongo)",
-                        "principios": "Clean Architecture / SOLID / 12-Factor App"
-                    }
-                }
-                nested_data.append(nested_doc)
-            
-            if nested_data:
-                self._mongo_repo.save_batch_report(nested_data)
+
+            # Construct nested document structure in Spark to preserve database schema and support distributed writes
+            df_mongo = df_scored.select(
+                F.lit("SmartFleet_Pro").alias("proyecto"),
+                F.lit("2.0.0").alias("version_pipeline"),
+                F.col("id_viaje"),
+                F.current_timestamp().alias("fecha_analisis"),
+                F.current_timestamp().alias("timestamp_procesamiento"),
+                
+                # Global metrics at root level for Change Stream consistency
+                F.round(F.col("velocidad_promedio_kmh").cast("double"), 2).alias("velocidad_promedio_kmh"),
+                F.round(F.col("velocidad_maxima_kmh").cast("double"), 2).alias("velocidad_maxima_kmh"),
+                F.round(F.col("score_riesgo_global").cast("double"), 2).alias("global_risk_score"),
+
+                F.struct(
+                    F.coalesce(F.col("ultimo_latitud").cast("double"), F.lit(-12.0464)).alias("latitud"),
+                    F.coalesce(F.col("ultimo_longitud").cast("double"), F.lit(-77.0428)).alias("longitud")
+                ).alias("posicion_actual"),
+
+                F.struct(
+                    F.col("total_muestras").cast("integer").alias("total_muestras"),
+                    F.round(F.col("velocidad_promedio_kmh").cast("double"), 2).alias("velocidad_promedio_kmh"),
+                    F.round(F.col("velocidad_maxima_kmh").cast("double"), 2).alias("velocidad_maxima_kmh"),
+                    F.col("alertas_exceso_velocidad").cast("integer").alias("alertas_exceso_velocidad"),
+                    F.lit(TelemetryConstants.SPEED_LIMIT_KMH).alias("umbral_velocidad_kmh")
+                ).alias("metricas_basicas"),
+
+                F.struct(
+                    F.round(F.col("aceleracion_varianza").cast("double"), 2).alias("aceleracion_varianza_kmhs2"),
+                    F.col("frenadas_bruscas_count").cast("integer").alias("frenadas_bruscas_count"),
+                    F.lit(-4.5).alias("umbral_frenado_kmhs"),
+                    F.round(F.col("score_riesgo_global").cast("double"), 2).alias("score_riesgo_global"),
+                    F.struct(
+                        F.lit(RiskScoreWeights.SPEEDING_WEIGHT).alias("exceso_velocidad"),
+                        F.lit(RiskScoreWeights.VARIANCE_WEIGHT).alias("varianza_acel"),
+                        F.lit(RiskScoreWeights.HARD_BRAKING_WEIGHT).alias("frenadas_bruscas")
+                    ).alias("ponderaciones_matriz")
+                ).alias("ia_predictiva"),
+
+                F.struct(
+                    F.lit(f"PySpark {self._spark.version} (JVM Native)").alias("motor_procesamiento"),
+                    F.lit("Window Functions — Partitioned by id_viaje").alias("patron_etl"),
+                    F.lit("Fórmula de Koenig-Huygens: E[X²] - (E[X])²").alias("algoritmo_varianza"),
+                    F.lit("Native MongoDB Spark Connector").alias("patron_persistencia"),
+                    F.lit("Clean Architecture / SOLID / 12-Factor App").alias("principios")
+                ).alias("arquitectura"),
+
+                F.col("puntos_telemetria")
+            )
+
+            # Write to MongoDB using the native Spark MongoDB Connector in parallel
+            (
+                df_mongo.write
+                .format("mongodb")
+                .mode("append")
+                .option("connection.uri", self._mongo_repo.uri)
+                .option("database", self._mongo_repo.db_name)
+                .option("collection", "analytics_reports")
+                .option("operationType", "replace")
+                .option("idFieldList", "id_viaje")
+                .save()
+            )
 
             logger.info("[ETL END] Ejecución del pipeline ETL completada exitosamente.")
 

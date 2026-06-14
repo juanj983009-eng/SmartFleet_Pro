@@ -5,7 +5,8 @@ FROM python:3.11-slim-bullseye
 WORKDIR /app
 
 # Instalar dependencias del backend sin caché
-RUN pip install --no-cache-dir fastapi uvicorn pymongo python-dotenv
+RUN pip install --no-cache-dir fastapi uvicorn pymongo python-dotenv motor sse-starlette
+
 
 # Copiar el código fuente al contenedor
 COPY src ./src

@@ -29,6 +29,8 @@ class MongoAnalyticsRepository:
                 self._client.admin.command("ping")
                 self._db = self._client[db_name]
                 self._collection = self._db["analytics_reports"]
+                self.uri = current_uri
+                self.db_name = db_name
                 logger.info(f"[MongoAnalyticsRepository] Conexión establecida usando URI: {current_uri.split('@')[-1]}")
                 return
             except PyMongoError as e:
@@ -43,25 +45,103 @@ class MongoAnalyticsRepository:
 
     def save_batch_report(self, data_list: list) -> None:
         """
-        Inserta un lote de documentos en la colección 'analytics_reports'.
-        Agrega un campo de auditoría 'timestamp_procesamiento' en formato UTC a cada registro.
+        Guarda o actualiza un lote de documentos utilizando operaciones atómicas UpdateOne.
+        Utiliza el operador $push con el modificador $sort para mantener el histórico de telemetría ordenado.
         """
         if not data_list:
             return
 
-        try:
-            now_utc = datetime.utcnow()
-            for document in data_list:
-                document["timestamp_procesamiento"] = now_utc
+        from pymongo import UpdateOne
+        operations = []
+        now_utc = datetime.utcnow()
 
-            self._collection.insert_many(data_list)
-            logger.info(f"[MongoAnalyticsRepository] Guardado exitoso de lote con {len(data_list)} reportes.")
-        except PyMongoError as e:
-            logger.error(
-                f"[MongoAnalyticsRepository] Error crítico al persistir lote en MongoDB: {e}",
-                exc_info=True
+        for document in data_list:
+            document["timestamp_procesamiento"] = now_utc
+            trip_id = document.get("id_viaje")
+            if not trip_id:
+                continue
+
+            # Extraer puntos_telemetria para hacer el push
+            points = document.get("puntos_telemetria", [])
+
+            # Crear documento para $set (todos los campos excepto puntos_telemetria e id_viaje)
+            set_doc = {k: v for k, v in document.items() if k not in ["puntos_telemetria", "id_viaje", "_id"]}
+            set_doc["id_viaje"] = trip_id
+
+            # Forzar métricas globales específicas a nivel de raíz para consistencia del Change Stream
+            set_doc["velocidad_promedio_kmh"] = document.get("metricas_basicas", {}).get("velocidad_promedio_kmh")
+            set_doc["velocidad_maxima_kmh"] = document.get("metricas_basicas", {}).get("velocidad_maxima_kmh")
+            set_doc["global_risk_score"] = document.get("ia_predictiva", {}).get("score_riesgo_global")
+            set_doc["timestamp_procesamiento"] = now_utc
+
+            update_query = {
+                "$set": set_doc
+            }
+
+            if points:
+                structured_points = []
+                for p in points:
+                    ts_val = p.get("timestamp") or p.get("tiempo")
+                    parsed_dt = None
+                    if isinstance(ts_val, str):
+                        ts_val_clean = ts_val.strip()
+                        for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S"):
+                            try:
+                                parsed_dt = datetime.strptime(ts_val_clean, fmt)
+                                break
+                            except ValueError:
+                                continue
+                        if parsed_dt is None:
+                            try:
+                                from dateutil import parser
+                                parsed_dt = parser.parse(ts_val_clean)
+                            except Exception:
+                                parsed_dt = datetime.utcnow()
+                    elif isinstance(ts_val, datetime):
+                        parsed_dt = ts_val
+                    else:
+                        parsed_dt = datetime.utcnow()
+
+                    vel_val = p.get("velocidad") or p.get("velocidad_promedio_kmh") or p.get("velocidad_maxima_kmh") or 0.0
+                    try:
+                        vel_float = float(vel_val)
+                    except (ValueError, TypeError):
+                        vel_float = 0.0
+
+                    structured_points.append({
+                        "timestamp": parsed_dt,
+                        "velocidad_promedio_kmh": vel_float,
+                        "velocidad_maxima_kmh": vel_float
+                    })
+
+                update_query["$push"] = {
+                    "puntos_telemetria": {
+                        "$each": structured_points,
+                        "$sort": {"timestamp": 1}
+                    }
+                }
+
+            operations.append(
+                UpdateOne(
+                    {"id_viaje": trip_id},
+                    update_query,
+                    upsert=True
+                )
             )
-            raise
+
+        if operations:
+            try:
+                result = self._collection.bulk_write(operations)
+                logger.info(
+                    f"[MongoAnalyticsRepository] Guardado exitoso con bulk_write: "
+                    f"matched={result.matched_count}, upserted={result.upserted_count}, modified={result.modified_count}"
+                )
+            except PyMongoError as e:
+                logger.error(
+                    f"[MongoAnalyticsRepository] Error crítico al persistir lote en MongoDB vía bulk_write: {e}",
+                    exc_info=True
+                )
+                raise
 
     def close(self) -> None:
         """
