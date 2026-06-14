@@ -7,24 +7,32 @@
   100% { opacity: 1; transform: translateX(0); }
 }
 
-/* Ancho y alto de la barra */
+/* Sobrescritura aislada del scrollbar del navegador */
 ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 8px !important;
+    height: 8px !important;
 }
-/* Fondo del canal de la barra (oculto/transparente) */
+
+/* Pista de fondo: Forzar negro puro para mimetizarse con el fondo real del HUD */
 ::-webkit-scrollbar-track {
-    background: rgba(16, 16, 18, 0.4);
-    border-radius: 4px;
+    background: #000000 !important;
 }
-/* Color del indicador de posicion (Thumb) alineado con la paleta del HUD */
+
+/* Indicador de posición (Thumb): Gris oscuro neutro industrial */
 ::-webkit-scrollbar-thumb {
-    background: rgba(57, 255, 20, 0.3);
-    border-radius: 4px;
-    transition: background 0.3s ease;
+    background: #1A1A1A !important; 
+    border-radius: 4px !important;
+    border: 2px solid #000000 !important; /* Colchón visual transparente */
 }
-/* Efecto hover interactivo */
+
+/* Estado Hover del indicador */
 ::-webkit-scrollbar-thumb:hover {
-    background: rgba(57, 255, 20, 0.6);
+    background: #262626 !important;
+}
+
+/* Soporte estándar para Firefox sin alterar divs */
+html {
+    scrollbar-width: thin !important;
+    scrollbar-color: #1A1A1A #000000 !important;
 }
 
